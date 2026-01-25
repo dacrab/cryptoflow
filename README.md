@@ -54,8 +54,7 @@ A blazing-fast, real-time cryptocurrency dashboard built with SolidJS and the Bi
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js 18+ 
-- npm or bun
+- [Bun](https://bun.sh/) (recommended) or Node.js 18+
 
 ### Installation
 
@@ -65,17 +64,17 @@ git clone https://github.com/dacrab/cryptoflow.git
 cd cryptoflow
 
 # Install dependencies
-npm install
+bun install
 
 # Start development server
-npm run dev
+bun dev
 ```
 
 ### Build for Production
 
 ```bash
-npm run build
-npm run preview
+bun run build
+bun run preview
 ```
 
 ## 📁 Project Structure
