@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   fix:
@@ -16,7 +17,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - name: Commit updated lockfile
+      - name: Create PR with updated lockfile
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -25,5 +26,11 @@ jobs:
             echo "No lockfile changes needed"
             exit 0
           fi
-          git commit -m "chore: sync bun.lock after Vercel analytics merge"
-          git push
+          git checkout -b fix/sync-bun-lock
+          git commit -m "chore: sync bun.lock"
+          git push origin fix/sync-bun-lock
+          gh pr create --title "chore: sync bun.lock" \
+            --body "Syncs bun.lock after bot PRs that modified package.json without updating the lockfile." \
+            --base main --head fix/sync-bun-lock
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
