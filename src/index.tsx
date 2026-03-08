@@ -3,6 +3,7 @@ import { Router, Route } from '@solidjs/router';
 import { lazy, Suspense, For } from 'solid-js';
 import { StoreProvider } from './store';
 import { ListSkeleton, SidebarSkeleton, Skeleton } from './components/ui';
+import { inject } from '@vercel/analytics';
 import './index.css';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -60,5 +61,7 @@ function App() {
     </StoreProvider>
   );
 }
+
+inject();
 
 render(() => <App />, document.getElementById('root')!);
