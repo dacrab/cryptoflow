@@ -1,54 +1,46 @@
-import { Component, Show, For, createSignal, createEffect, onCleanup } from 'solid-js';
-import { getOrderBook, type OrderBookData } from '../api';
+import { Component, Show, For, createMemo } from 'solid-js';
+import { getOrderBook } from '../api';
 import { fmt } from '../utils';
-import { Card, Skeleton, LiveDot, SKELETON_ROWS_8 } from './ui';
+import { Card, Skeleton, LiveDot } from './ui';
+import { createPolled } from '../hooks';
 
-interface Props {
-  coinId: string;
-}
+const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' | 'ask' }> = (props) => {
+  const pct = () => (parseFloat(props.item[1]) / props.maxQty) * 100;
+  const isBid = props.side === 'bid';
+  return (
+    <div class="relative flex items-center justify-between text-xs py-0.5 px-1 rounded">
+      <div class={`absolute inset-0 rounded transition-all ${isBid ? 'bg-emerald-500/10' : 'bg-red-500/10'}`} style={{ width: `${pct()}%` }} />
+      <span class={`relative font-mono ${isBid ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(parseFloat(props.item[0]))}</span>
+      <span class="relative text-zinc-500 font-mono">{parseFloat(props.item[1]).toFixed(4)}</span>
+    </div>
+  );
+};
 
-const OrderBook: Component<Props> = (props) => {
-  const [data, setData] = createSignal<OrderBookData | null>(null);
-  const [loading, setLoading] = createSignal(true);
+const OrderBook: Component<{ coinId: string }> = (props) => {
+  const { data, loading } = createPolled(() => getOrderBook(props.coinId, 8), 2000);
 
-  const fetchData = async () => {
-    try {
-      const result = await getOrderBook(props.coinId, 8);
-      if (result?.bids?.length && result?.asks?.length) setData(result);
-    } catch {} finally { setLoading(false); }
-  };
+  const hasData = () => !!data()?.bids?.length && !!data()?.asks?.length;
 
-  createEffect(() => {
-    if (!props.coinId) return;
-    setLoading(true);
-    setData(null);
-    fetchData();
-    const interval = setInterval(fetchData, 2000);
-    onCleanup(() => clearInterval(interval));
+  const maxQty = createMemo(() => {
+    const d = data();
+    if (!d) return 1;
+    let max = 1;
+    for (const [, q] of [...d.bids, ...d.asks]) { const n = parseFloat(q); if (n > max) max = n; }
+    return max;
   });
 
-  const maxQty = () => {
-    const d = data();
-    if (!d?.bids || !d?.asks) return 1;
-    return Math.max(...[...d.bids, ...d.asks].map(([, q]) => parseFloat(q || '0')), 1);
-  };
-
-  const buyPressure = () => {
+  const buyPressure = createMemo(() => {
     const d = data();
     if (!d || d.bidTotal + d.askTotal === 0) return 50;
     return (d.bidTotal / (d.bidTotal + d.askTotal)) * 100;
-  };
-
-  const bestAsk = () => parseFloat(data()?.asks?.[0]?.[0] || '0');
-  const bestBid = () => parseFloat(data()?.bids?.[0]?.[0] || '0');
-  const hasData = () => data()?.bids?.length && data()?.asks?.length;
+  });
 
   return (
     <Card>
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-zinc-300">Order Book</h3>
-          <LiveDot show={!!hasData() && !loading()} />
+          <LiveDot show={hasData() && !loading()} />
         </div>
         <Show when={hasData()}>
           <span class="text-[10px] text-zinc-500">
@@ -59,7 +51,7 @@ const OrderBook: Component<Props> = (props) => {
 
       <Show when={loading() && !hasData()}>
         <div class="space-y-1">
-          <For each={SKELETON_ROWS_8}>{() => <Skeleton class="h-5 rounded" />}</For>
+          <For each={Array(8).fill(0)}>{() => <Skeleton class="h-5 rounded" />}</For>
         </div>
       </Show>
 
@@ -69,40 +61,20 @@ const OrderBook: Component<Props> = (props) => {
 
       <Show when={hasData()}>
         <div class="space-y-0.5 mb-2">
-          <For each={[...(data()?.asks || [])].reverse()}>
-            {(item) => {
-              if (!item?.[0] || !item?.[1]) return null;
-              const pct = (parseFloat(item[1]) / maxQty()) * 100;
-              return (
-                <div class="relative flex items-center justify-between text-xs py-0.5 px-1 rounded">
-                  <div class="absolute inset-0 bg-red-500/10 rounded transition-all" style={{ width: `${pct}%` }} />
-                  <span class="relative text-red-400 font-mono">{fmt(parseFloat(item[0]))}</span>
-                  <span class="relative text-zinc-500 font-mono">{parseFloat(item[1]).toFixed(4)}</span>
-                </div>
-              );
-            }}
+          <For each={[...(data()!.asks)].reverse()}>
+            {(item) => <OrderRow item={item} maxQty={maxQty()} side="ask" />}
           </For>
         </div>
 
         <div class="flex items-center justify-center gap-2 py-1.5 border-y border-zinc-800/50 my-2">
-          <span class="text-xs font-mono text-red-400">{fmt(bestAsk())}</span>
+          <span class="text-xs font-mono text-red-400">{fmt(parseFloat(data()!.asks[0][0]))}</span>
           <span class="text-[10px] text-zinc-600">↕</span>
-          <span class="text-xs font-mono text-emerald-400">{fmt(bestBid())}</span>
+          <span class="text-xs font-mono text-emerald-400">{fmt(parseFloat(data()!.bids[0][0]))}</span>
         </div>
 
         <div class="space-y-0.5 mt-2">
-          <For each={data()?.bids || []}>
-            {(item) => {
-              if (!item?.[0] || !item?.[1]) return null;
-              const pct = (parseFloat(item[1]) / maxQty()) * 100;
-              return (
-                <div class="relative flex items-center justify-between text-xs py-0.5 px-1 rounded">
-                  <div class="absolute inset-0 bg-emerald-500/10 rounded transition-all" style={{ width: `${pct}%` }} />
-                  <span class="relative text-emerald-400 font-mono">{fmt(parseFloat(item[0]))}</span>
-                  <span class="relative text-zinc-500 font-mono">{parseFloat(item[1]).toFixed(4)}</span>
-                </div>
-              );
-            }}
+          <For each={data()!.bids}>
+            {(item) => <OrderRow item={item} maxQty={maxQty()} side="bid" />}
           </For>
         </div>
 

@@ -19,26 +19,31 @@ interface Props {
   onReconnect?: () => void;
 }
 
+// Defined outside to avoid recreation on every CoinList render
+const SortBtn: Component<{ field: SortField; label: string; active: boolean; dir: 'asc' | 'desc'; onSort: (f: SortField) => void }> = (p) => (
+  <button onClick={() => p.onSort(p.field)} class={`flex items-center gap-1 text-[10px] uppercase tracking-wider transition-colors ${p.active ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}>
+    {p.label}
+    <Show when={p.active}><span class="text-emerald-400">{p.dir === 'asc' ? '↑' : '↓'}</span></Show>
+  </button>
+);
+
 const CoinList: Component<Props> = (props) => {
-  const SortBtn: Component<{ field: SortField; label: string }> = (p) => {
-    const active = () => props.sortField === p.field;
-    return (
-      <button onClick={() => props.onSort(p.field)} class={`flex items-center gap-1 text-[10px] uppercase tracking-wider transition-colors ${active() ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}>
-        {p.label}
-        <Show when={active()}><span class="text-emerald-400">{props.sortDir === 'asc' ? '↑' : '↓'}</span></Show>
-      </button>
-    );
-  };
+  const sortBtnProps = (field: SortField) => ({
+    field,
+    active: props.sortField === field,
+    dir: props.sortDir,
+    onSort: props.onSort,
+  });
 
   return (
     <Card padding="none" class="overflow-hidden">
       <div class="hidden sm:grid grid-cols-[2rem_1fr_6rem_auto_2rem] items-center gap-3 px-3 py-2 border-b border-zinc-800/50 bg-zinc-900/30">
         <span class="text-[10px] text-zinc-600 text-right">#</span>
-        <SortBtn field="market_cap" label="Name" />
+        <SortBtn label="Name" {...sortBtnProps('market_cap')} />
         <span class="text-[10px] text-zinc-600">7D</span>
         <div class="flex gap-4 justify-end">
-          <SortBtn field="price" label="Price" />
-          <SortBtn field="change_24h" label="24h" />
+          <SortBtn label="Price" {...sortBtnProps('price')} />
+          <SortBtn label="24h" {...sortBtnProps('change_24h')} />
         </div>
         <span />
       </div>
@@ -57,31 +62,36 @@ const CoinList: Component<Props> = (props) => {
         <Match when={props.coins.length > 0}>
           <div class="divide-y divide-zinc-800/30">
             <Index each={props.coins}>
-              {(coin, i) => (
-                <A href={`/coin/${coin().id}`} class="group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_1fr_6rem_auto_2rem] items-center gap-2 sm:gap-3 px-3 py-3 hover:bg-white/[0.02] transition-colors">
-                  <span class="text-xs text-zinc-600 text-right font-mono">{i + 1}</span>
-                  <div class="flex items-center gap-3 min-w-0">
-                    <CoinAvatar src={coin().image} symbol={coin().symbol} size="md" />
-                    <div class="min-w-0">
-                      <div class="font-medium text-sm truncate flex items-center gap-2">
-                        {coin().name}
-                        <Show when={props.isWatched(coin().id)}><span class="text-amber-400 text-xs">★</span></Show>
+              {(coin, i) => {
+                const watched = () => props.isWatched(coin().id);
+                return (
+                  <div class="group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_1fr_6rem_auto_2rem] items-center gap-2 sm:gap-3 px-3 py-3 hover:bg-white/[0.02] transition-colors">
+                    <span class="text-xs text-zinc-600 text-right font-mono">{i + 1}</span>
+                    <A href={`/coin/${coin().id}`} class="flex items-center gap-3 min-w-0">
+                      <CoinAvatar src={coin().image} symbol={coin().symbol} size="md" />
+                      <div class="min-w-0">
+                        <div class="font-medium text-sm truncate flex items-center gap-2">
+                          {coin().name}
+                          <Show when={watched()}><span class="text-amber-400 text-xs">★</span></Show>
+                        </div>
+                        <div class="text-xs text-zinc-500 uppercase">{coin().symbol}</div>
                       </div>
-                      <div class="text-xs text-zinc-500 uppercase">{coin().symbol}</div>
+                    </A>
+                    <div class="hidden sm:block h-8 opacity-60 group-hover:opacity-100 transition-opacity">
+                      <Sparkline id={coin().id} data={coin().sparkline_in_7d?.price} up={coin().price_change_percentage_24h >= 0} livePrice={coin().current_price} />
                     </div>
+                    <A href={`/coin/${coin().id}`}>
+                      <Price price={coin().current_price} change={coin().price_change_percentage_24h} size="md" />
+                    </A>
+                    <button
+                      onClick={() => props.onWatch(coin().id)}
+                      class={`hidden sm:flex items-center justify-center w-8 h-8 rounded-lg transition-all ${watched() ? 'text-amber-400 hover:bg-amber-400/10' : 'text-zinc-700 hover:text-zinc-400 hover:bg-white/5 opacity-0 group-hover:opacity-100'}`}
+                    >
+                      <StarIcon filled={watched()} />
+                    </button>
                   </div>
-                  <div class="hidden sm:block h-8 opacity-60 group-hover:opacity-100 transition-opacity">
-                    <Sparkline data={coin().sparkline_in_7d?.price} up={coin().price_change_percentage_24h >= 0} livePrice={coin().current_price} />
-                  </div>
-                  <Price price={coin().current_price} change={coin().price_change_percentage_24h} size="md" />
-                  <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onWatch(coin().id); }}
-                    class={`hidden sm:flex items-center justify-center w-8 h-8 rounded-lg transition-all ${props.isWatched(coin().id) ? 'text-amber-400 hover:bg-amber-400/10' : 'text-zinc-700 hover:text-zinc-400 hover:bg-white/5 opacity-0 group-hover:opacity-100'}`}
-                  >
-                    <StarIcon filled={props.isWatched(coin().id)} />
-                  </button>
-                </A>
-              )}
+                );
+              }}
             </Index>
           </div>
         </Match>

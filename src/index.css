@@ -22,14 +22,6 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #444; }
 * { scrollbar-width: thin; scrollbar-color: #333 transparent; }
 
-/* Line clamp */
-.line-clamp-4 {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 /* Selection */
 ::selection {
   background: rgba(16, 185, 129, 0.3);

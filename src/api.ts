@@ -1,9 +1,27 @@
 import type { Coin, CoinDetail, PricePoint } from './types';
 
 const API = 'https://api.binance.com/api/v3';
-const WS = 'wss://stream.binance.com:9443/ws';
+const WS  = 'wss://stream.binance.com:9443/ws';
 
 const EXCLUDE = new Set(['USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI', 'USDD', 'USDP', 'WBTC', 'WBETH', 'STETH', 'BETH']);
+
+// Cache TTLs (ms)
+const TTL = {
+  tickers:   10_000,
+  coins:     30_000,
+  sparkline: 300_000,
+  history1d: 60_000,
+  history:   300_000,
+  orderbook: 5_000,
+  trades:    3_000,
+} as const;
+
+// WebSocket tuning
+const WS_MAX_SYMBOLS    = 100;
+const WS_FLUSH_MS       = 100;
+const WS_HEARTBEAT_MS   = 30_000;
+const WS_STALE_MS       = 10_000;
+const WS_MAX_RECONNECT_MS = 30_000;
 
 // ============================================
 // Cache System
@@ -38,7 +56,7 @@ interface Ticker {
 }
 
 async function getAllTickers(): Promise<Ticker[]> {
-  const cached = getCache<Ticker[]>('tickers', 10000);
+  const cached = getCache<Ticker[]>('tickers', TTL.tickers);
   if (cached) return cached;
   
   const data = await fetchJson<Ticker[]>(`${API}/ticker/24hr`);
@@ -78,9 +96,6 @@ class RealtimeManager {
   private updateBuffer = new Map<string, RealtimeData>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   
-  private readonly FLUSH_INTERVAL = 100;
-  private readonly MAX_RECONNECT_DELAY = 30000;
-  private readonly HEARTBEAT_INTERVAL = 30000;
 
   subscribe(callback: DataCallback): () => void {
     this.dataCallbacks.add(callback);
@@ -163,7 +178,7 @@ class RealtimeManager {
     this.clearTimers();
     this.setState('connecting');
 
-    const streams = this.symbols.slice(0, 100).map(s => `${s.toLowerCase()}usdt@ticker`).join('/');
+    const streams = this.symbols.slice(0, WS_MAX_SYMBOLS).map(s => `${s.toLowerCase()}usdt@ticker`).join('/');
 
     try {
       this.ws = new WebSocket(`${WS}/${streams}`);
@@ -177,10 +192,10 @@ class RealtimeManager {
       this.reconnectAttempts = 0;
       this.lastMessage = Date.now();
       this.heartbeatTimer = setInterval(() => {
-        if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessage > 10000) {
+        if (this.ws?.readyState === WebSocket.OPEN && Date.now() - this.lastMessage > WS_STALE_MS) {
           this.ws.close();
         }
-      }, this.HEARTBEAT_INTERVAL);
+      }, WS_HEARTBEAT_MS);
     };
 
     this.ws.onmessage = (e) => {
@@ -221,20 +236,14 @@ class RealtimeManager {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.MAX_RECONNECT_DELAY) * (0.75 + Math.random() * 0.5);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), WS_MAX_RECONNECT_MS) * (0.75 + Math.random() * 0.5);
     this.reconnectAttempts++;
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.connect();
-    }, delay);
+    this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, delay);
   }
 
   private scheduleFlush() {
     if (this.flushTimer) return;
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null;
-      this.flush();
-    }, this.FLUSH_INTERVAL);
+    this.flushTimer = setTimeout(() => { this.flushTimer = null; this.flush(); }, WS_FLUSH_MS);
   }
 
   private flush() {
@@ -274,13 +283,13 @@ const NAMES: Record<string, string> = {
   QNT: 'Quant', EGLD: 'MultiversX', ICP: 'Internet Computer',
 };
 
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const getName = (sym: string) => NAMES[sym] || sym;
-const toId = (sym: string) => (NAMES[sym] || sym).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const toId = (sym: string) => slug(NAMES[sym] || sym);
 
-// Get symbol from coin ID
 const idToSymbol = (id: string): string => {
   for (const [sym, name] of Object.entries(NAMES)) {
-    if (name.toLowerCase().replace(/[^a-z0-9]+/g, '-') === id) return sym;
+    if (slug(name) === id) return sym;
   }
   return id.toUpperCase();
 };
@@ -292,34 +301,25 @@ const idToSymbol = (id: string): string => {
 // Sparkline cache that persists across calls
 const sparklineCache = new Map<string, number[]>();
 let sparklineLoadPromise: Promise<void> | null = null;
-let onSparklinesLoaded: (() => void) | null = null;
+let sparklinesReadyCallbacks: ((data: Map<string, number[]>) => void)[] = [];
 
 // Register callback for when sparklines finish loading
-export function onSparklinesReady(callback: () => void) {
-  onSparklinesLoaded = callback;
+export function onSparklinesReady(callback: (data: Map<string, number[]>) => void) {
+  sparklinesReadyCallbacks.push(callback);
 }
 
 // Load sparklines in background (non-blocking)
 async function loadSparklinesInBackground(syms: string[]) {
-  // Fetch all sparklines in parallel (not sequential batches)
-  const results = await Promise.allSettled(
-    syms.map(sym => getSparkline(sym))
-  );
-  
+  const results = await Promise.allSettled(syms.map(sym => getSparkline(sym)));
   results.forEach((result, i) => {
-    if (result.status === 'fulfilled' && result.value) {
-      sparklineCache.set(syms[i], result.value);
-    }
+    if (result.status === 'fulfilled' && result.value) sparklineCache.set(syms[i], result.value);
   });
-  
-  // Notify that sparklines are ready
-  if (onSparklinesLoaded) {
-    onSparklinesLoaded();
-  }
+  sparklinesReadyCallbacks.forEach(cb => cb(sparklineCache));
+  sparklinesReadyCallbacks = [];
 }
 
 export async function getCoins(limit = 100): Promise<Coin[]> {
-  const cached = getCache<Coin[]>(`coins_${limit}`, 30000);
+  const cached = getCache<Coin[]>(`coins_${limit}`, TTL.coins);
   if (cached) {
     // If we have cached coins but missing sparklines, load them
     if (sparklineCache.size < limit && !sparklineLoadPromise) {
@@ -357,7 +357,7 @@ export async function getCoins(limit = 100): Promise<Coin[]> {
       id: toId(sym),
       symbol: sym.toLowerCase(),
       name: getName(sym),
-      image: `https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/${sym.toLowerCase()}.png`,
+      image: `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`,
       current_price: parseFloat(t.lastPrice),
       price_change_percentage_24h: parseFloat(t.priceChangePercent),
       market_cap: vol * 10,
@@ -390,7 +390,7 @@ export async function getCoins(limit = 100): Promise<Coin[]> {
 }
 
 async function getSparkline(sym: string): Promise<number[] | null> {
-  const cached = getCache<number[]>(`spark_${sym}`, 300000);
+  const cached = getCache<number[]>(`spark_${sym}`, TTL.sparkline);
   if (cached) return cached;
 
   try {
@@ -419,28 +419,24 @@ export async function getCoin(id: string): Promise<CoinDetail> {
     id,
     symbol: sym.toLowerCase(),
     name: getName(sym),
-    image: { large: `https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/${sym.toLowerCase()}.png`, small: '' },
+    image: { large: `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`, small: '' },
     description: { en: '' },
     market_cap_rank: 0,
     market_data: {
       current_price: { usd: price },
       price_change_percentage_24h: change,
-      price_change_percentage_7d: change * 1.2,
-      price_change_percentage_30d: change * 2,
       market_cap: { usd: vol * 10 },
       total_volume: { usd: vol },
       high_24h: { usd: parseFloat(ticker.highPrice) },
       low_24h: { usd: parseFloat(ticker.lowPrice) },
       circulating_supply: 0,
       total_supply: null,
-      ath: { usd: 0 },
-      ath_change_percentage: { usd: 0 },
     },
   };
 }
 
 export async function getHistory(id: string, days: number): Promise<PricePoint[]> {
-  const cached = getCache<PricePoint[]>(`hist_${id}_${days}`, days <= 1 ? 60000 : 300000);
+  const cached = getCache<PricePoint[]>(`hist_${id}_${days}`, days <= 1 ? TTL.history1d : TTL.history);
   if (cached) return cached;
 
   const sym = idToSymbol(id);
@@ -456,9 +452,7 @@ export async function getHistory(id: string, days: number): Promise<PricePoint[]
 }
 
 export const prefetch = (id: string) => {
-  [1, 7, 30, 90, 365].forEach((d, i) =>
-    setTimeout(() => getHistory(id, d).catch(() => {}), i * 200)
-  );
+  [1, 7, 30, 90, 365].forEach(d => getHistory(id, d).catch(() => {}));
 };
 
 // ============================================
@@ -485,7 +479,7 @@ export interface Trade {
 
 export async function getOrderBook(id: string, limit = 10): Promise<OrderBookData | null> {
   const sym = idToSymbol(id);
-  const cached = getCache<OrderBookData>(`orderbook_${id}`, 5000);
+  const cached = getCache<OrderBookData>(`orderbook_${id}`, TTL.orderbook);
   if (cached) return cached;
 
   try {
@@ -513,7 +507,7 @@ export async function getOrderBook(id: string, limit = 10): Promise<OrderBookDat
 
 export async function getRecentTrades(id: string, limit = 20): Promise<Trade[]> {
   const sym = idToSymbol(id);
-  const cached = getCache<Trade[]>(`trades_${id}`, 3000);
+  const cached = getCache<Trade[]>(`trades_${id}`, TTL.trades);
   if (cached) return cached;
 
   try {

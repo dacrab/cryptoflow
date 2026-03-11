@@ -44,12 +44,16 @@ const Dashboard: Component = () => {
 
   const preview = createMemo(() => selected() || store.sorted()[0] || null);
 
-  const MiniRow: Component<{ coin: Coin }> = (p) => (
-    <button onClick={() => setSelected(p.coin)} class="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors text-left">
+  const MiniRow: Component<{ coin: Coin; preview?: boolean }> = (p) => (
+    <A
+      href={`/coin/${p.coin.id}`}
+      onClick={() => p.preview && setSelected(p.coin)}
+      class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors"
+    >
       <CoinAvatar src={p.coin.image} symbol={p.coin.symbol} size="sm" />
       <span class="flex-1 text-sm font-medium truncate">{p.coin.symbol.toUpperCase()}</span>
       <Price price={p.coin.current_price} change={p.coin.price_change_percentage_24h} size="sm" />
-    </button>
+    </A>
   );
 
   return (
@@ -92,7 +96,7 @@ const Dashboard: Component = () => {
                     <Show when={!store.loading()}><span class="text-xs text-zinc-600">{store.stats().filtered}</span></Show>
                   </div>
                   <Show when={store.state.search || store.state.watchlistOnly}>
-                    <button onClick={() => { store.clearSearch(); store.setWatchlistOnly(false); }} class="text-xs text-zinc-500 hover:text-white transition-colors">Clear</button>
+                    <button onClick={() => { store.clearSearch(); if (store.state.watchlistOnly) store.toggleWatchlistOnly(); }} class="text-xs text-zinc-500 hover:text-white transition-colors">Clear</button>
                   </Show>
                 </div>
                 <CoinList
@@ -122,7 +126,7 @@ const Dashboard: Component = () => {
                         </div>
                       </div>
                       <div class="mb-4"><Price price={c().current_price} change={c().price_change_percentage_24h} size="lg" class="text-left" /></div>
-                      <div class="h-20 mb-4"><Sparkline data={c().sparkline_in_7d?.price} up={c().price_change_percentage_24h >= 0} livePrice={c().current_price} /></div>
+                      <div class="h-20 mb-4"><Sparkline id={c().id} data={c().sparkline_in_7d?.price} up={c().price_change_percentage_24h >= 0} livePrice={c().current_price} /></div>
                       <div class="grid grid-cols-2 gap-3 text-xs mb-4">
                         <div><div class="text-zinc-500 mb-0.5">Market Cap</div><div class="font-mono">${compactNum(c().market_cap)}</div></div>
                         <div><div class="text-zinc-500 mb-0.5">Volume</div><div class="font-mono">${compactNum(c().total_volume)}</div></div>

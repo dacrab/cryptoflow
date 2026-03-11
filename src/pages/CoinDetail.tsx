@@ -8,7 +8,7 @@ import PriceChart from '../components/PriceChart';
 import OrderBook from '../components/OrderBook';
 import RecentTrades from '../components/RecentTrades';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { Card, Button, Skeleton, ConnectionIndicator, StarIcon, Price, CoinAvatar, MiniStatCard, SKELETON_ROWS_8 } from '../components/ui';
+import { Card, Button, Skeleton, ConnectionIndicator, StarIcon, Price, CoinAvatar, MiniStatCard } from '../components/ui';
 
 const CoinDetail: Component = () => {
   const params = useParams<{ id: string }>();
@@ -51,7 +51,7 @@ const CoinDetail: Component = () => {
                     <Card class="space-y-3">
                       <Skeleton class="w-24 h-4" />
                       <div class="grid grid-cols-2 gap-3">
-                        <For each={SKELETON_ROWS_8}>{() => <Skeleton class="h-14 rounded-lg" />}</For>
+                        <For each={Array(8).fill(0)}>{() => <Skeleton class="h-14 rounded-lg" />}</For>
                       </div>
                     </Card>
                   </div>
@@ -80,7 +80,6 @@ const CoinDetail: Component = () => {
                             </div>
                             <div class="flex items-baseline gap-2">
                               <Price price={price()} change={change()} size="lg" class="text-left" />
-                              <ConnectionIndicator state={store.connectionState()} onReconnect={store.reconnect} class="ml-2" />
                             </div>
                           </div>
                         </div>
@@ -90,7 +89,7 @@ const CoinDetail: Component = () => {
                         </Button>
                       </div>
 
-                      <Card><PriceChart coinId={params.id} symbol={c().symbol.toUpperCase()} livePrice={storeCoin()?.current_price} /></Card>
+                      <Card><PriceChart coinId={params.id} livePrice={storeCoin()?.current_price} /></Card>
 
                       <div class="grid md:grid-cols-2 gap-4">
                         <OrderBook coinId={params.id} />
@@ -117,7 +116,6 @@ const CoinDetail: Component = () => {
                           <MiniStatCard label="24h High" value={fmt(high())} live={isLive()} />
                           <MiniStatCard label="24h Low" value={fmt(low())} live={isLive()} />
                           <MiniStatCard label="24h Change" value={pct(change())} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
-                          <MiniStatCard label="7d Change" value={pct(c().market_data.price_change_percentage_7d)} variant={c().market_data.price_change_percentage_7d >= 0 ? 'success' : 'danger'} />
                           <MiniStatCard label="Circulating" value={compactNum(c().market_data.circulating_supply)} />
                           <MiniStatCard label="Total Supply" value={c().market_data.total_supply ? compactNum(c().market_data.total_supply) : '∞'} />
                         </div>
