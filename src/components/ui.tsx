@@ -3,14 +3,6 @@ import { fmt } from '../utils';
 import type { ConnectionState } from '../api';
 
 // ============================================
-// Shared Constants
-// ============================================
-
-export const SKELETON_ROWS_5 = [0, 1, 2, 3, 4];
-export const SKELETON_ROWS_8 = [0, 1, 2, 3, 4, 5, 6, 7];
-export const SKELETON_ROWS_10 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-
-// ============================================
 // Card - Reusable container
 // ============================================
 
@@ -35,46 +27,6 @@ export const Card: ParentComponent<CardProps> = (rawProps) => {
 };
 
 // ============================================
-// createPolling - Reusable polling hook
-// ============================================
-
-export function createPolling<T>(
-  fetcher: () => Promise<T | null>,
-  options: { interval: number; enabled?: () => boolean } = { interval: 2000 }
-) {
-  const [data, setData] = createSignal<T | null>(null);
-  const [loading, setLoading] = createSignal(true);
-  const [error, setError] = createSignal(false);
-
-  const fetchData = async () => {
-    try {
-      const result = await fetcher();
-      if (result !== null) {
-        setData(() => result);
-        setError(false);
-      }
-    } catch {
-      if (data() === null) setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  createEffect(() => {
-    if (options.enabled && !options.enabled()) return;
-    
-    setLoading(true);
-    setData(null);
-    fetchData();
-    
-    const interval = setInterval(fetchData, options.interval);
-    onCleanup(() => clearInterval(interval));
-  });
-
-  return { data, loading, error, refetch: fetchData };
-}
-
-// ============================================
 // Live Dot - Pulsing indicator for realtime data
 // ============================================
 
@@ -86,10 +38,6 @@ export const LiveDot: Component<{ show: boolean; class?: string }> = (props) => 
     </span>
   </Show>
 );
-
-// ============================================
-// Live Indicator - Dot with "Live" text
-// ============================================
 
 export const LiveIndicator: Component<{ show: boolean; class?: string }> = (props) => (
   <Show when={props.show}>
@@ -110,31 +58,27 @@ const STATE_CONFIG = {
   disconnected: { color: 'bg-red-500', ping: false, text: 'Disconnected', textColor: 'text-red-400' },
 } as const;
 
-export const ConnectionIndicator: Component<{ state: ConnectionState; onReconnect?: () => void; class?: string }> = (props) => {
-  const config = () => STATE_CONFIG[props.state];
-
-  return (
-    <div class={`flex items-center gap-2 ${props.class ?? ''}`}>
-      <span class="flex items-center gap-1.5">
-        <span class="relative flex h-2 w-2">
-          <Show when={config().ping}>
-            <span class={`animate-ping absolute inline-flex h-full w-full rounded-full ${config().color} opacity-75`} />
-          </Show>
-          <span class={`relative inline-flex rounded-full h-2 w-2 ${config().color} ${props.state === 'connecting' ? 'animate-pulse' : ''}`} />
-        </span>
-        <span class={`text-xs font-medium ${config().textColor}`}>{config().text}</span>
+export const ConnectionIndicator: Component<{ state: ConnectionState; onReconnect?: () => void; class?: string }> = (props) => (
+  <div class={`flex items-center gap-2 ${props.class ?? ''}`}>
+    <span class="flex items-center gap-1.5">
+      <span class="relative flex h-2 w-2">
+        <Show when={STATE_CONFIG[props.state].ping}>
+          <span class={`animate-ping absolute inline-flex h-full w-full rounded-full ${STATE_CONFIG[props.state].color} opacity-75`} />
+        </Show>
+        <span class={`relative inline-flex rounded-full h-2 w-2 ${STATE_CONFIG[props.state].color} ${props.state === 'connecting' ? 'animate-pulse' : ''}`} />
       </span>
-      <Show when={props.state === 'disconnected' && props.onReconnect}>
-        <button onClick={props.onReconnect} class="text-xs text-zinc-400 hover:text-white transition-colors underline underline-offset-2">
-          Retry
-        </button>
-      </Show>
-    </div>
-  );
-};
+      <span class={`text-xs font-medium ${STATE_CONFIG[props.state].textColor}`}>{STATE_CONFIG[props.state].text}</span>
+    </span>
+    <Show when={props.state === 'disconnected' && props.onReconnect}>
+      <button onClick={props.onReconnect} class="text-xs text-zinc-400 hover:text-white transition-colors underline underline-offset-2">
+        Retry
+      </button>
+    </Show>
+  </div>
+);
 
 // ============================================
-// Stat Card - Reusable stat display
+// Stat Cards
 // ============================================
 
 interface StatCardProps {
@@ -145,53 +89,31 @@ interface StatCardProps {
   class?: string;
 }
 
+const variantColor = (v: 'default' | 'success' | 'danger') =>
+  v === 'success' ? 'text-emerald-400' : v === 'danger' ? 'text-red-400' : '';
+
 export const StatCard: Component<StatCardProps> = (rawProps) => {
   const props = mergeProps({ variant: 'default' as const, live: false }, rawProps);
-  
-  const valueColor = () => {
-    if (props.variant === 'success') return 'text-emerald-400';
-    if (props.variant === 'danger') return 'text-red-400';
-    return '';
-  };
-
   return (
     <Card class={props.class}>
       <div class="flex items-center gap-1.5 mb-1">
         <span class="text-[10px] text-zinc-500 uppercase">{props.label}</span>
         <LiveDot show={props.live} />
       </div>
-      <div class={`text-lg font-semibold font-mono ${valueColor()}`}>{props.value}</div>
+      <div class={`text-lg font-semibold font-mono ${variantColor(props.variant)}`}>{props.value}</div>
     </Card>
   );
 };
 
-// ============================================
-// Mini Stat Card - For sidebar stats
-// ============================================
-
-interface MiniStatCardProps {
-  label: string;
-  value: string | number;
-  live?: boolean;
-  variant?: 'default' | 'success' | 'danger';
-}
-
-export const MiniStatCard: Component<MiniStatCardProps> = (rawProps) => {
+export const MiniStatCard: Component<Omit<StatCardProps, 'class'>> = (rawProps) => {
   const props = mergeProps({ variant: 'default' as const, live: false }, rawProps);
-  
-  const valueColor = () => {
-    if (props.variant === 'success') return 'text-emerald-400';
-    if (props.variant === 'danger') return 'text-red-400';
-    return '';
-  };
-
   return (
     <div class="bg-zinc-800/30 rounded-lg p-3">
       <div class="flex items-center gap-1.5 mb-1">
         <span class="text-[10px] text-zinc-500 uppercase">{props.label}</span>
         <LiveDot show={props.live} />
       </div>
-      <div class={`text-sm font-mono ${valueColor()}`}>{props.value}</div>
+      <div class={`text-sm font-mono ${variantColor(props.variant)}`}>{props.value}</div>
     </div>
   );
 };
@@ -216,17 +138,25 @@ const AVATAR_SIZES = {
 
 export const CoinAvatar: Component<CoinAvatarProps> = (rawProps) => {
   const props = mergeProps({ size: 'md' as const }, rawProps);
-  const size = () => AVATAR_SIZES[props.size];
+
+  const handleError = (e: Event) => {
+    const img = e.currentTarget as HTMLImageElement;
+    const sym = props.symbol.toLowerCase();
+    // Fallback chain: jsdelivr (already tried) → Binance CDN → letter avatar
+    if (!img.src.includes('bnbstatic')) {
+      img.src = `https://bin.bnbstatic.com/image/admin_mgs_image_upload/20201110/87496d50-2408-43e1-ad4c-78b47b448a6a/icon/${sym}.png`;
+    } else {
+      img.src = `https://ui-avatars.com/api/?name=${props.symbol.toUpperCase()}&background=27272a&color=a1a1aa&size=${AVATAR_SIZES[props.size].fallback}&bold=true&length=2`;
+    }
+  };
 
   return (
     <img
       src={props.src}
-      alt=""
-      class={`${size().img} rounded-full ring-1 ring-white/10 ${props.class ?? ''}`}
+      alt={props.symbol}
+      class={`${AVATAR_SIZES[props.size].img} rounded-full ring-1 ring-white/10 ${props.class ?? ''}`}
       loading="lazy"
-      onError={(e) => {
-        e.currentTarget.src = `https://ui-avatars.com/api/?name=${props.symbol}&background=333&color=fff&size=${size().fallback}`;
-      }}
+      onError={handleError}
     />
   );
 };
@@ -258,7 +188,8 @@ export const Price: Component<PriceProps> = (rawProps) => {
     const p = prev();
     if (p !== 0 && p !== newPrice) {
       setFlash(newPrice > p ? 'up' : 'down');
-      setTimeout(() => setFlash(null), 500);
+      const t = setTimeout(() => setFlash(null), 500);
+      onCleanup(() => clearTimeout(t));
     }
     setPrev(newPrice);
   }, { defer: true }));
@@ -438,7 +369,7 @@ export const ChartSkeleton: Component = () => (
     <div class="flex justify-between items-start">
       <div class="space-y-2"><Skeleton class="w-36 h-8" /><Skeleton class="w-28 h-4" /></div>
       <div class="flex gap-1">
-        <For each={SKELETON_ROWS_5}>{() => <Skeleton class="w-10 h-7 rounded-md" />}</For>
+        <For each={Array(5).fill(0)}>{() => <Skeleton class="w-10 h-7 rounded-md" />}</For>
       </div>
     </div>
     <Skeleton class="w-full h-48 rounded-lg" />

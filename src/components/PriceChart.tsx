@@ -1,4 +1,4 @@
-import { Component, createSignal, createResource, createMemo, createEffect, on, Show, For, Switch, Match } from 'solid-js';
+import { Component, createSignal, createResource, createMemo, Show, For, Switch, Match } from 'solid-js';
 import { getHistory } from '../api';
 import { fmt } from '../utils';
 import { ChartSkeleton, LiveIndicator } from './ui';
@@ -11,83 +11,112 @@ const RANGES = [
   { label: '1Y', days: 365 },
 ];
 
+const N = 80; // number of interpolated display points
+
+interface Point {
+  x: number;
+  y: number;
+  price: number;
+  date: string;
+  // stored on every point for cheap live-price range checks
+  min: number;
+  max: number;
+  range: number;
+}
+
 interface Props {
   coinId: string;
-  symbol?: string;
-  livePrice?: number; // Passed from parent (via store's centralized realtime)
+  livePrice?: number;
 }
 
 const PriceChart: Component<Props> = (props) => {
   const [days, setDays] = createSignal(7);
   const [hover, setHover] = createSignal<number | null>(null);
-  const [points, setPoints] = createSignal<{ x: number; y: number; price: number; date: string }[]>([]);
 
   const [data] = createResource(() => ({ id: props.coinId, days: days() }), (p) => getHistory(p.id, p.days));
 
-  // Process data - uses livePrice from props (centralized store)
-  createEffect(on([() => data(), () => props.livePrice], ([d, livePrice]) => {
-    if (!d || d.length < 2) return;
+  // Base points — only recomputed when historical data changes, NOT on every live tick.
+  const basePoints = createMemo((): Point[] | null => {
+    const d = data();
+    if (!d || d.length < 2) return null;
 
-    let prices = [...d];
-
-    // Always add live price point if available
-    if (livePrice !== undefined) {
-      const last = prices[prices.length - 1];
-      const now = Math.floor(Date.now() / 1000);
-      if (now - last.time > 60) {
-        prices = [...prices, { time: now, price: livePrice }];
-      } else {
-        prices = [...prices.slice(0, -1), { time: now, price: livePrice }];
-      }
-    }
-
-    const vals = prices.map(p => p.price);
+    const vals = d.map(p => p.price);
     const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
-    const n = 80;
 
-    setPoints(Array.from({ length: n }, (_, i) => {
-      const idx = (i / (n - 1)) * (prices.length - 1);
-      const lo = Math.floor(idx), hi = Math.min(lo + 1, prices.length - 1), t = idx - lo;
-      const price = prices[lo].price * (1 - t) + prices[hi].price * t;
-      const time = prices[lo].time * (1 - t) + prices[hi].time * t;
+    return Array.from({ length: N }, (_, i) => {
+      const idx = (i / (N - 1)) * (d.length - 1);
+      const lo = Math.floor(idx), hi = Math.min(lo + 1, d.length - 1), t = idx - lo;
+      const price = d[lo].price * (1 - t) + d[hi].price * t;
+      const time  = d[lo].time  * (1 - t) + d[hi].time  * t;
       return {
-        x: (i / (n - 1)) * 100,
+        x: (i / (N - 1)) * 100,
         y: 100 - ((price - min) / range) * 85,
         price,
-        date: new Date(time * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: days() <= 1 ? 'numeric' : undefined }),
+        min, max, range,
+        date: new Date(time * 1000).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric',
+          hour: days() <= 1 ? 'numeric' : undefined,
+        }),
       };
-    }));
-  }));
+    });
+  });
 
-  const path = createMemo(() => points().map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-  const area = createMemo(() => path() ? `${path()} L100,100 L0,100 Z` : '');
+  // Final display points — cheap update: only patches last point's y for live price.
+  const points = createMemo((): Point[] => {
+    const base = basePoints();
+    if (!base) return [];
+    const live = props.livePrice;
+    if (live === undefined) return base;
+
+    const { min: bMin, max: bMax, range: bRange } = base[0];
+
+    // Fast path: live price within historic range — just update the last point
+    if (live >= bMin && live <= bMax) {
+      const last: Point = { ...base[base.length - 1], price: live, y: 100 - ((live - bMin) / bRange) * 85 };
+      return [...base.slice(0, -1), last];
+    }
+
+    // Slow path (rare): live price outside historic range — rescale all y values
+    const min = Math.min(bMin, live), max = Math.max(bMax, live);
+    const range = max - min || 1;
+    return base.map((p, i): Point => ({
+      ...p,
+      y: 100 - ((p.price - min) / range) * 85,
+      ...(i === base.length - 1 ? { price: live, y: 100 - ((live - min) / range) * 85 } : {}),
+    }));
+  });
+
+  const pathAndArea = createMemo(() => {
+    const pts = points();
+    if (!pts.length) return { path: '', area: '' };
+    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    return { path, area: `${path} L100,100 L0,100 Z` };
+  });
+
+  const priceRange = createMemo(() => {
+    const pts = points();
+    if (!pts.length) return { min: 0, max: 0 };
+    let min = pts[0].price, max = pts[0].price;
+    for (const p of pts) { if (p.price < min) min = p.price; if (p.price > max) max = p.price; }
+    return { min, max };
+  });
 
   const first = () => points()[0]?.price ?? 0;
-  const last = () => props.livePrice ?? points().at(-1)?.price ?? 0;
-  const up = () => last() >= first();
+  const last  = () => props.livePrice ?? points().at(-1)?.price ?? 0;
+  const up     = () => last() >= first();
   const change = () => first() ? ((last() - first()) / first()) * 100 : 0;
-  const color = () => up() ? '#10b981' : '#ef4444';
+  const color  = () => up() ? '#10b981' : '#ef4444';
 
-  const hovered = () => hover() !== null ? points()[hover()!] : null;
+  const hovered   = () => hover() !== null ? points()[hover()!] : null;
   const showPrice = () => hovered()?.price ?? last();
-  const showDate = () => hovered()?.date ?? (props.livePrice !== undefined ? 'Now' : `vs ${RANGES.find(r => r.days === days())?.label} ago`);
+  const showDate  = () => hovered()?.date ?? (props.livePrice !== undefined ? 'Now' : `vs ${RANGES.find(r => r.days === days())?.label} ago`);
 
   const onMove = (e: MouseEvent) => {
     const pts = points();
-    if (pts.length === 0) return;
-    const rect = (e.target as SVGElement).getBoundingClientRect();
+    if (!pts.length) return;
+    const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     setHover(pts.reduce((best, p, i) => Math.abs(p.x - x) < Math.abs(pts[best].x - x) ? i : best, 0));
-  };
-  
-  const maxPrice = () => {
-    const pts = points();
-    return pts.length > 0 ? Math.max(...pts.map(p => p.price)) : 0;
-  };
-  
-  const minPrice = () => {
-    const pts = points();
-    return pts.length > 0 ? Math.min(...pts.map(p => p.price)) : 0;
   };
 
   return (
@@ -119,13 +148,19 @@ const PriceChart: Component<Props> = (props) => {
           <div class="relative h-48">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="w-full h-full cursor-crosshair" onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
               <defs>
-                <linearGradient id="g-up" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity="0.2" /><stop offset="100%" stop-color="#10b981" stop-opacity="0" /></linearGradient>
+                <linearGradient id="g-up"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981" stop-opacity="0.2" /><stop offset="100%" stop-color="#10b981" stop-opacity="0" /></linearGradient>
                 <linearGradient id="g-down" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ef4444" stop-opacity="0.2" /><stop offset="100%" stop-color="#ef4444" stop-opacity="0" /></linearGradient>
               </defs>
-              <g stroke="white" stroke-opacity="0.03"><line x1="0" y1="25" x2="100" y2="25" /><line x1="0" y1="50" x2="100" y2="50" /><line x1="0" y1="75" x2="100" y2="75" /></g>
-              <path d={area()} fill={up() ? 'url(#g-up)' : 'url(#g-down)'} />
-              <path d={path()} fill="none" stroke={color()} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-              <Show when={hovered()}>{(p) => <line x1={p().x} y1="0" x2={p().x} y2="100" stroke="white" stroke-opacity="0.15" stroke-dasharray="2,2" vector-effect="non-scaling-stroke" />}</Show>
+              <g stroke="white" stroke-opacity="0.03">
+                <line x1="0" y1="25" x2="100" y2="25" />
+                <line x1="0" y1="50" x2="100" y2="50" />
+                <line x1="0" y1="75" x2="100" y2="75" />
+              </g>
+              <path d={pathAndArea().area} fill={up() ? 'url(#g-up)' : 'url(#g-down)'} />
+              <path d={pathAndArea().path} fill="none" stroke={color()} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <Show when={hovered()}>
+                {(p) => <line x1={p().x} y1="0" x2={p().x} y2="100" stroke="white" stroke-opacity="0.15" stroke-dasharray="2,2" vector-effect="non-scaling-stroke" />}
+              </Show>
             </svg>
             <Show when={hovered()}>
               {(p) => (
@@ -134,8 +169,8 @@ const PriceChart: Component<Props> = (props) => {
                 </div>
               )}
             </Show>
-            <div class="absolute right-0 top-2 text-[10px] font-mono text-zinc-600">{fmt(maxPrice())}</div>
-            <div class="absolute right-0 bottom-2 text-[10px] font-mono text-zinc-600">{fmt(minPrice())}</div>
+            <div class="absolute right-0 top-2 text-[10px] font-mono text-zinc-600">{fmt(priceRange().max)}</div>
+            <div class="absolute right-0 bottom-2 text-[10px] font-mono text-zinc-600">{fmt(priceRange().min)}</div>
           </div>
         </div>
       </Match>

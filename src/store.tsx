@@ -1,5 +1,5 @@
 import { createStore, produce, reconcile } from 'solid-js/store';
-import { createResource, createEffect, createMemo, createContext, useContext, batch, on, onCleanup, createSignal, createSelector } from 'solid-js';
+import { createResource, createEffect, createMemo, createContext, useContext, batch, on, onCleanup, createSignal } from 'solid-js';
 import { getCoins, realtime, onSparklinesReady, type ConnectionState, type RealtimeData } from './api';
 import type { Coin, SortField, SortConfig } from './types';
 import { getSortValue } from './utils';
@@ -54,9 +54,15 @@ function createAppStore() {
     }
   }));
 
-  // Refetch when sparklines finish loading in background
-  onSparklinesReady(() => {
-    refetch();
+  // When sparklines finish loading, patch them directly into the store
+  // without a full refetch (which would hit a stale cache).
+  onSparklinesReady((sparklines: Map<string, number[]>) => {
+    batch(() => {
+      coinsStore.list.forEach((coin, i) => {
+        const data = sparklines.get(coin.symbol.toUpperCase());
+        if (data) setCoinsStore('list', i, 'sparkline_in_7d', { price: data });
+      });
+    });
   });
 
   const unsubState = realtime.subscribeState(setConnectionState);
@@ -77,16 +83,12 @@ function createAppStore() {
   createEffect(on(() => state.watchlist, (list) => localStorage.setItem('watchlist', JSON.stringify(list)), { defer: true }));
   createEffect(on(() => state.sort, (sort) => localStorage.setItem('sort', JSON.stringify(sort)), { defer: true }));
 
-  const isWatchedSelector = createSelector(
-    () => state.watchlist,
-    (id: string, watchlist) => watchlist.includes(id)
-  );
+  const isWatched = (id: string) => state.watchlist.includes(id);
 
   // Actions
   const setSearch = (s: string) => setState('search', s);
   const clearSearch = () => setState('search', '');
   const toggleWatchlistOnly = () => setState('watchlistOnly', !state.watchlistOnly);
-  const setWatchlistOnly = (v: boolean) => setState('watchlistOnly', v);
 
   const setSort = (field: SortField) => {
     setState('sort', produce((s) => {
@@ -122,14 +124,14 @@ function createAppStore() {
   const sorted = createMemo(() => {
     const list = filtered();
     const { field, direction } = state.sort;
-    const watchlist = state.watchlist;
+    const watchSet = new Set(state.watchlist);
     const m = direction === 'asc' ? 1 : -1;
     
     return [...list].sort((a, b) => {
-      const aWatched = watchlist.includes(a.id);
-      const bWatched = watchlist.includes(b.id);
-      if (aWatched && !bWatched) return -1;
-      if (!aWatched && bWatched) return 1;
+      const aW = watchSet.has(a.id);
+      const bW = watchSet.has(b.id);
+      if (aW && !bW) return -1;
+      if (!aW && bW) return 1;
       return (getSortValue(a, field) - getSortValue(b, field)) * m;
     });
   });
@@ -145,19 +147,20 @@ function createAppStore() {
       .filter((c): c is Coin => c !== undefined);
   });
 
-  // Single-pass stats calculation
+  // Single-pass stats — split filtered count into its own memo so price
+  // ticks (which change coinsStore.list fields) don't re-run filteredCount.
+  const filteredCount = createMemo(() => filtered().length);
+
   const stats = createMemo(() => {
     const list = coinsStore.list;
     let gainers = 0, losers = 0;
-    
     for (const c of list) {
       if (c.price_change_percentage_24h > 0) gainers++;
       else if (c.price_change_percentage_24h < 0) losers++;
     }
-    
     return {
       total: list.length,
-      filtered: filtered().length,
+      filtered: filteredCount(),
       watched: state.watchlist.length,
       gainers,
       losers,
@@ -178,8 +181,8 @@ function createAppStore() {
     reconnect: realtime.reconnect.bind(realtime),
     filtered, sorted, watched, stats,
     getCoinById,
-    isWatched: isWatchedSelector,
-    setSearch, clearSearch, setSort, toggleWatch, toggleWatchlistOnly, setWatchlistOnly, refetch,
+    isWatched,
+    setSearch, clearSearch, setSort, toggleWatch, toggleWatchlistOnly, refetch,
   };
 }
 
@@ -187,7 +190,7 @@ export type Store = ReturnType<typeof createAppStore>;
 
 const StoreContext = createContext<Store>();
 
-export function StoreProvider(props: { children: any }) {
+export function StoreProvider(props: { children: import('solid-js').JSX.Element }) {
   return <StoreContext.Provider value={createAppStore()}>{props.children}</StoreContext.Provider>;
 }
 

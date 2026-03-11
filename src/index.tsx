@@ -3,14 +3,11 @@ import { Router, Route } from '@solidjs/router';
 import { lazy, Suspense, For } from 'solid-js';
 import { StoreProvider } from './store';
 import { ListSkeleton, SidebarSkeleton, Skeleton } from './components/ui';
-import { inject } from '@vercel/analytics';
 import './index.css';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CoinDetail = lazy(() => import('./pages/CoinDetail'));
 const NotFound = lazy(() => import('./pages/NotFound'));
-
-const STAT_ITEMS = [0, 1, 2, 3];
 
 function PageSkeleton(props: { type: 'dashboard' | 'detail' }) {
   return (
@@ -27,7 +24,7 @@ function PageSkeleton(props: { type: 'dashboard' | 'detail' }) {
           {props.type === 'dashboard' ? (
             <div class="space-y-6">
               <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <For each={STAT_ITEMS}>{() => <Skeleton class="h-20 rounded-xl" />}</For>
+                <For each={Array(4).fill(0)}>{() => <Skeleton class="h-20 rounded-xl" />}</For>
               </div>
               <div class="grid lg:grid-cols-[260px_1fr_300px] gap-6">
                 <div class="hidden lg:block space-y-4"><SidebarSkeleton /><SidebarSkeleton /></div>
@@ -61,7 +58,5 @@ function App() {
     </StoreProvider>
   );
 }
-
-inject();
 
 render(() => <App />, document.getElementById('root')!);

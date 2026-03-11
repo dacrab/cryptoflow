@@ -65,22 +65,6 @@ const NotFound: Component = () => {
           The asset you're looking for doesn't exist or has been delisted.
         </p>
 
-        {/* Stats-like display */}
-        <div class="grid grid-cols-3 gap-3 mb-8">
-          <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
-            <div class="text-[10px] text-zinc-600 uppercase mb-1">Status</div>
-            <div class="text-sm font-mono text-red-400">404</div>
-          </div>
-          <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
-            <div class="text-[10px] text-zinc-600 uppercase mb-1">Page</div>
-            <div class="text-sm font-mono text-zinc-400">Lost</div>
-          </div>
-          <div class="bg-zinc-900/50 rounded-xl p-3 border border-zinc-800/50">
-            <div class="text-[10px] text-zinc-600 uppercase mb-1">Action</div>
-            <div class="text-sm font-mono text-emerald-400">HODL</div>
-          </div>
-        </div>
-
         {/* Action buttons */}
         <div class="flex flex-col sm:flex-row gap-3 justify-center">
           <A href="/">
