@@ -38,11 +38,5 @@ export interface PricePoint {
   price: number;
 }
 
-// Store Types
 export type SortField = 'market_cap' | 'price' | 'change_24h' | 'volume';
 export type SortDirection = 'asc' | 'desc';
-
-export interface SortConfig {
-  field: SortField;
-  direction: SortDirection;
-}

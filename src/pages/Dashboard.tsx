@@ -1,17 +1,15 @@
-import { Component, Show, Index, onMount, onCleanup, createMemo, createSignal } from 'solid-js';
+import { Component, Show, Index, onMount, onCleanup, createMemo } from 'solid-js';
 import { A } from '@solidjs/router';
 import { useStore } from '../store';
 import type { Coin } from '../types';
 import { compactNum } from '../utils';
 import Header from '../components/Header';
 import CoinList from '../components/CoinList';
-import Sparkline from '../components/Sparkline';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Card, StatCard, Price, CoinAvatar } from '../components/ui';
 
 const Dashboard: Component = () => {
   const store = useStore();
-  const [selected, setSelected] = createSignal<Coin | null>(null);
 
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -19,7 +17,7 @@ const Dashboard: Component = () => {
       if (e.key === '/') { e.preventDefault(); document.querySelector<HTMLInputElement>('input')?.focus(); }
       if (e.key === 'r') store.refetch();
       if (e.key === 'w') store.toggleWatchlistOnly();
-      if (e.key === 'Escape') { store.clearSearch(); setSelected(null); }
+      if (e.key === 'Escape') store.clearSearch();
     };
     window.addEventListener('keydown', onKey);
     const interval = setInterval(store.refetch, 300_000);
@@ -42,14 +40,8 @@ const Dashboard: Component = () => {
     return { mcap, vol, up: store.stats().gainers, down: store.stats().losers };
   });
 
-  const preview = createMemo(() => selected() || store.sorted()[0] || null);
-
-  const MiniRow: Component<{ coin: Coin; preview?: boolean }> = (p) => (
-    <A
-      href={`/coin/${p.coin.id}`}
-      onClick={() => p.preview && setSelected(p.coin)}
-      class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors"
-    >
+  const MiniRow: Component<{ coin: Coin }> = (p) => (
+    <A href={`/coin/${p.coin.id}`} class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
       <CoinAvatar src={p.coin.image} symbol={p.coin.symbol} size="sm" />
       <span class="flex-1 text-sm font-medium truncate">{p.coin.symbol.toUpperCase()}</span>
       <Price price={p.coin.current_price} change={p.coin.price_change_percentage_24h} size="sm" />
@@ -115,26 +107,6 @@ const Dashboard: Component = () => {
               </section>
 
               <aside class="hidden lg:block space-y-4">
-                <Show when={preview()}>
-                  {(c) => (
-                    <Card>
-                      <div class="flex items-center gap-3 mb-4">
-                        <CoinAvatar src={c().image} symbol={c().symbol} size="lg" />
-                        <div>
-                          <div class="font-medium">{c().name}</div>
-                          <div class="text-xs text-zinc-500">{c().symbol.toUpperCase()} · #{c().market_cap_rank}</div>
-                        </div>
-                      </div>
-                      <div class="mb-4"><Price price={c().current_price} change={c().price_change_percentage_24h} size="lg" class="text-left" /></div>
-                      <div class="h-20 mb-4"><Sparkline id={c().id} data={c().sparkline_in_7d?.price} up={c().price_change_percentage_24h >= 0} livePrice={c().current_price} /></div>
-                      <div class="grid grid-cols-2 gap-3 text-xs mb-4">
-                        <div><div class="text-zinc-500 mb-0.5">Market Cap</div><div class="font-mono">${compactNum(c().market_cap)}</div></div>
-                        <div><div class="text-zinc-500 mb-0.5">Volume</div><div class="font-mono">${compactNum(c().total_volume)}</div></div>
-                      </div>
-                      <A href={`/coin/${c().id}`} class="block w-full py-2 text-center text-sm bg-white/5 hover:bg-white/10 rounded-lg transition-colors">View Details →</A>
-                    </Card>
-                  )}
-                </Show>
                 <Show when={store.watched().length > 0}>
                   <Card padding="none">
                     <div class="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">

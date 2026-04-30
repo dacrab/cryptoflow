@@ -2,7 +2,7 @@ import { render } from 'solid-js/web';
 import { Router, Route } from '@solidjs/router';
 import { lazy, Suspense, For } from 'solid-js';
 import { StoreProvider } from './store';
-import { ListSkeleton, SidebarSkeleton, Skeleton } from './components/ui';
+import { ListSkeleton, Skeleton } from './components/ui';
 import './index.css';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -27,9 +27,9 @@ function PageSkeleton(props: { type: 'dashboard' | 'detail' }) {
                 <For each={Array(4).fill(0)}>{() => <Skeleton class="h-20 rounded-xl" />}</For>
               </div>
               <div class="grid lg:grid-cols-[260px_1fr_300px] gap-6">
-                <div class="hidden lg:block space-y-4"><SidebarSkeleton /><SidebarSkeleton /></div>
+                <div class="hidden lg:block space-y-4"><Skeleton class="h-64 rounded-xl" /><Skeleton class="h-64 rounded-xl" /></div>
                 <ListSkeleton rows={10} />
-                <div class="hidden lg:block space-y-4"><Skeleton class="h-72 rounded-xl" /><SidebarSkeleton rows={3} /></div>
+                <div class="hidden lg:block space-y-4"><Skeleton class="h-72 rounded-xl" /><Skeleton class="h-48 rounded-xl" /></div>
               </div>
             </div>
           ) : (

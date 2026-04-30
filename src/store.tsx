@@ -1,12 +1,11 @@
-import { createStore, produce, reconcile } from 'solid-js/store';
-import { createResource, createEffect, createMemo, createContext, useContext, batch, on, onCleanup, createSignal } from 'solid-js';
+import { createStore, produce } from 'solid-js/store';
+import { createResource, createEffect, createMemo, createContext, useContext, on, onCleanup, createSignal } from 'solid-js';
 import { getCoins, realtime, onSparklinesReady, type ConnectionState, type RealtimeData } from './api';
-import type { Coin, SortField, SortConfig } from './types';
-import { getSortValue } from './utils';
+import type { Coin, SortField, SortDirection } from './types';
 
 interface State {
   search: string;
-  sort: SortConfig;
+  sort: { field: SortField; direction: SortDirection };
   watchlist: string[];
   watchlistOnly: boolean;
 }
@@ -28,53 +27,31 @@ function createAppStore() {
     watchlistOnly: false,
   });
 
-  const [coinsStore, setCoinsStore] = createStore<{ list: Coin[]; byId: Record<string, number> }>({ 
-    list: [], 
-    byId: {}
-  });
-  
+  const [coins, setCoins] = createStore<Coin[]>([]);
   const [connectionState, setConnectionState] = createSignal<ConnectionState>('disconnected');
   const [coinsResource, { refetch }] = createResource(() => getCoins(), { initialValue: [] });
 
-  let symbolIndexMap = new Map<string, number>();
-
-  createEffect(on(() => coinsResource(), (coins) => {
-    if (coins.length) {
-      const byId: Record<string, number> = {};
-      symbolIndexMap = new Map();
-      coins.forEach((c, i) => {
-        byId[c.id] = i;
-        symbolIndexMap.set(c.symbol.toUpperCase(), i);
-      });
-      
-      batch(() => {
-        setCoinsStore('list', reconcile(coins));
-        setCoinsStore('byId', byId);
-      });
-    }
+  createEffect(on(() => coinsResource(), (newCoins) => {
+    if (newCoins.length) setCoins(newCoins);
   }));
 
-  // When sparklines finish loading, patch them directly into the store
-  // without a full refetch (which would hit a stale cache).
   onSparklinesReady((sparklines: Map<string, number[]>) => {
-    batch(() => {
-      coinsStore.list.forEach((coin, i) => {
-        const data = sparklines.get(coin.symbol.toUpperCase());
-        if (data) setCoinsStore('list', i, 'sparkline_in_7d', { price: data });
-      });
+    coins.forEach((coin, i) => {
+      const data = sparklines.get(coin.symbol.toUpperCase());
+      if (data) setCoins(i, 'sparkline_in_7d', { price: data });
     });
   });
 
   const unsubState = realtime.subscribeState(setConnectionState);
   const unsub = realtime.subscribe((symbol: string, data: RealtimeData) => {
-    const i = symbolIndexMap.get(symbol);
-    if (i !== undefined) {
-      batch(() => {
-        setCoinsStore('list', i, 'current_price', data.price);
-        setCoinsStore('list', i, 'price_change_percentage_24h', data.change);
-        setCoinsStore('list', i, 'total_volume', data.volume);
-        setCoinsStore('list', i, 'high_24h', data.high);
-        setCoinsStore('list', i, 'low_24h', data.low);
+    const i = coins.findIndex(c => c.symbol.toUpperCase() === symbol);
+    if (i >= 0) {
+      setCoins(i, {
+        current_price: data.price,
+        price_change_percentage_24h: data.change,
+        total_volume: data.volume,
+        high_24h: data.high,
+        low_24h: data.low,
       });
     }
   });
@@ -85,7 +62,6 @@ function createAppStore() {
 
   const isWatched = (id: string) => state.watchlist.includes(id);
 
-  // Actions
   const setSearch = (s: string) => setState('search', s);
   const clearSearch = () => setState('search', '');
   const toggleWatchlistOnly = () => setState('watchlistOnly', !state.watchlistOnly);
@@ -104,77 +80,65 @@ function createAppStore() {
     }));
   };
 
-  // Filtered list
   const filtered = createMemo(() => {
-    const list = coinsStore.list;
     const q = state.search.toLowerCase().trim();
-    const watchlistOnly = state.watchlistOnly;
-    const watchlist = state.watchlist;
+    if (!q && !state.watchlistOnly) return coins;
     
-    if (!q && !watchlistOnly) return list;
-    
-    return list.filter(c => {
+    return coins.filter(c => {
       if (q && !c.name.toLowerCase().includes(q) && !c.symbol.includes(q)) return false;
-      if (watchlistOnly && !watchlist.includes(c.id)) return false;
+      if (state.watchlistOnly && !state.watchlist.includes(c.id)) return false;
       return true;
     });
   });
 
-  // Sorted list with watched coins first
   const sorted = createMemo(() => {
     const list = filtered();
     const { field, direction } = state.sort;
     const watchSet = new Set(state.watchlist);
     const m = direction === 'asc' ? 1 : -1;
     
+    const getValue = (c: Coin) => {
+      if (field === 'price') return c.current_price;
+      if (field === 'change_24h') return c.price_change_percentage_24h;
+      if (field === 'volume') return c.total_volume;
+      return c.market_cap;
+    };
+    
     return [...list].sort((a, b) => {
       const aW = watchSet.has(a.id);
       const bW = watchSet.has(b.id);
       if (aW && !bW) return -1;
       if (!aW && bW) return 1;
-      return (getSortValue(a, field) - getSortValue(b, field)) * m;
+      return (getValue(a) - getValue(b)) * m;
     });
   });
 
-  // Watched coins using index lookup
   const watched = createMemo(() => {
-    const watchlist = state.watchlist;
-    const byId = coinsStore.byId;
-    const list = coinsStore.list;
-    
-    return watchlist
-      .map(id => byId[id] !== undefined ? list[byId[id]] : undefined)
+    return state.watchlist
+      .map(id => coins.find(c => c.id === id))
       .filter((c): c is Coin => c !== undefined);
   });
 
-  // Single-pass stats — split filtered count into its own memo so price
-  // ticks (which change coinsStore.list fields) don't re-run filteredCount.
-  const filteredCount = createMemo(() => filtered().length);
-
   const stats = createMemo(() => {
-    const list = coinsStore.list;
     let gainers = 0, losers = 0;
-    for (const c of list) {
+    for (const c of coins) {
       if (c.price_change_percentage_24h > 0) gainers++;
       else if (c.price_change_percentage_24h < 0) losers++;
     }
     return {
-      total: list.length,
-      filtered: filteredCount(),
+      total: coins.length,
+      filtered: filtered().length,
       watched: state.watchlist.length,
       gainers,
       losers,
     };
   });
 
-  const getCoinById = (id: string) => {
-    const idx = coinsStore.byId[id];
-    return idx !== undefined ? coinsStore.list[idx] : undefined;
-  };
+  const getCoinById = (id: string) => coins.find(c => c.id === id);
 
   return {
     state,
-    coins: () => coinsStore.list,
+    coins: () => coins,
     loading: () => coinsResource.loading,
     error: () => coinsResource.error,
     connectionState,

@@ -2,7 +2,7 @@ import { Component, createResource, Show, Switch, Match, createMemo, onMount, Fo
 import { useParams } from '@solidjs/router';
 import { useStore } from '../store';
 import { getCoin, prefetch } from '../api';
-import { fmt, pct, compactNum } from '../utils';
+import { fmt, compactNum } from '../utils';
 import Header from '../components/Header';
 import PriceChart from '../components/PriceChart';
 import OrderBook from '../components/OrderBook';
@@ -115,7 +115,7 @@ const CoinDetail: Component = () => {
                           <MiniStatCard label="Volume (24h)" value={`$${compactNum(volume())}`} live={isLive()} />
                           <MiniStatCard label="24h High" value={fmt(high())} live={isLive()} />
                           <MiniStatCard label="24h Low" value={fmt(low())} live={isLive()} />
-                          <MiniStatCard label="24h Change" value={pct(change())} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
+                          <MiniStatCard label="24h Change" value={`${change() >= 0 ? '+' : ''}${change().toFixed(2)}%`} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
                           <MiniStatCard label="Circulating" value={compactNum(c().market_data.circulating_supply)} />
                           <MiniStatCard label="Total Supply" value={c().market_data.total_supply ? compactNum(c().market_data.total_supply) : '∞'} />
                         </div>
@@ -139,15 +139,6 @@ const CoinDetail: Component = () => {
                             <span class="text-xs text-zinc-400">Current: </span>
                             <span class="text-xs font-mono text-white">{fmt(price())}</span>
                           </div>
-                        </div>
-                      </Card>
-
-                      <Card>
-                        <h2 class="text-sm font-medium text-zinc-300 mb-4">Trading Info</h2>
-                        <div class="space-y-3 text-xs">
-                          <div class="flex justify-between"><span class="text-zinc-500">Symbol</span><span class="font-mono text-zinc-300">{c().symbol.toUpperCase()}/USDT</span></div>
-                          <div class="flex justify-between"><span class="text-zinc-500">Exchange</span><span class="text-zinc-300">Binance</span></div>
-                          <div class="flex justify-between"><span class="text-zinc-500">Data Source</span><span class="text-zinc-300">Binance API</span></div>
                         </div>
                       </Card>
                     </div>

@@ -1,8 +1,7 @@
-import { Component, Show, For, createMemo } from 'solid-js';
-import { getRecentTrades } from '../api';
+import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { getRecentTrades, type Trade } from '../api';
 import { fmt } from '../utils';
 import { Card, Skeleton, LiveDot } from './ui';
-import { createPolled } from '../hooks';
 
 const formatTime = (ts: number) =>
   ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '--:--:--';
@@ -13,7 +12,27 @@ const formatQty = (qty: number) => {
 };
 
 const RecentTrades: Component<{ coinId: string }> = (props) => {
-  const { data: trades, loading } = createPolled(() => getRecentTrades(props.coinId, 15), 1500);
+  const [trades, setTrades] = createSignal<Trade[]>([]);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setTrades([]);
+
+    const run = async () => {
+      try {
+        const result = await getRecentTrades(props.coinId, 15);
+        if (!cancelled && result) setTrades(result);
+      } catch {} finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    run();
+    const id = setInterval(run, 1500);
+    onCleanup(() => { cancelled = true; clearInterval(id); });
+  });
 
   const hasData = () => (trades()?.length ?? 0) > 0;
 
