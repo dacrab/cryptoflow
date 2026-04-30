@@ -1,8 +1,7 @@
-import { Component, Show, For, createMemo } from 'solid-js';
-import { getOrderBook } from '../api';
+import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { getOrderBook, type OrderBookData } from '../api';
 import { fmt } from '../utils';
 import { Card, Skeleton, LiveDot } from './ui';
-import { createPolled } from '../hooks';
 
 const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' | 'ask' }> = (props) => {
   const pct = () => (parseFloat(props.item[1]) / props.maxQty) * 100;
@@ -17,7 +16,27 @@ const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' 
 };
 
 const OrderBook: Component<{ coinId: string }> = (props) => {
-  const { data, loading } = createPolled(() => getOrderBook(props.coinId, 8), 2000);
+  const [data, setData] = createSignal<OrderBookData | null>(null);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setData(null);
+
+    const run = async () => {
+      try {
+        const result = await getOrderBook(props.coinId, 8);
+        if (!cancelled && result) setData(result);
+      } catch {} finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    run();
+    const id = setInterval(run, 2000);
+    onCleanup(() => { cancelled = true; clearInterval(id); });
+  });
 
   const hasData = () => !!data()?.bids?.length && !!data()?.asks?.length;
 

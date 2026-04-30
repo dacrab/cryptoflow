@@ -1,7 +1,7 @@
 import { Component, createSignal, createResource, createMemo, Show, For, Switch, Match } from 'solid-js';
 import { getHistory } from '../api';
 import { fmt } from '../utils';
-import { ChartSkeleton, LiveIndicator } from './ui';
+import { Skeleton, LiveDot } from './ui';
 
 const RANGES = [
   { label: '24H', days: 1 },
@@ -121,7 +121,17 @@ const PriceChart: Component<Props> = (props) => {
 
   return (
     <Switch>
-      <Match when={data.loading && !points().length}><ChartSkeleton /></Match>
+      <Match when={data.loading && !points().length}>
+        <div class="space-y-4">
+          <div class="flex justify-between items-start">
+            <div class="space-y-2"><Skeleton class="w-36 h-8" /><Skeleton class="w-28 h-4" /></div>
+            <div class="flex gap-1">
+              <For each={Array(5).fill(0)}>{() => <Skeleton class="w-10 h-7 rounded-md" />}</For>
+            </div>
+          </div>
+          <Skeleton class="w-full h-48 rounded-lg" />
+        </div>
+      </Match>
       <Match when={data.error}><div class="h-48 flex items-center justify-center text-red-400">Failed to load</div></Match>
       <Match when={points().length > 0}>
         <div class="select-none">
@@ -131,7 +141,12 @@ const PriceChart: Component<Props> = (props) => {
               <div class="flex items-center gap-2 mt-0.5">
                 <span class={`text-sm font-mono ${up() ? 'text-emerald-500' : 'text-red-500'}`}>{up() ? '↑' : '↓'} {Math.abs(change()).toFixed(2)}%</span>
                 <span class="text-sm text-zinc-600">{showDate()}</span>
-                <LiveIndicator show={props.livePrice !== undefined} />
+                <Show when={props.livePrice !== undefined}>
+                  <span class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                    <LiveDot show />
+                    Live
+                  </span>
+                </Show>
               </div>
             </div>
             <div class="flex gap-0.5 bg-white/5 rounded-lg p-0.5">
