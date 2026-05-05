@@ -1,4 +1,4 @@
-import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, For, createMemo, createResource, onCleanup } from 'solid-js';
 import { getOrderBook, type OrderBookData } from '../api';
 import { fmt } from '../utils';
 import { Card, Skeleton, LiveDot } from './ui';
@@ -16,27 +16,10 @@ const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' 
 };
 
 const OrderBook: Component<{ coinId: string }> = (props) => {
-  const [data, setData] = createSignal<OrderBookData | null>(null);
-  const [loading, setLoading] = createSignal(true);
+  const [data, { refetch }] = createResource(() => props.coinId, (id) => getOrderBook(id, 8));
 
-  createEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setData(null);
-
-    const run = async () => {
-      try {
-        const result = await getOrderBook(props.coinId, 8);
-        if (!cancelled && result) setData(result);
-      } catch {} finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    run();
-    const id = setInterval(run, 2000);
-    onCleanup(() => { cancelled = true; clearInterval(id); });
-  });
+  const id = setInterval(refetch, 2_000);
+  onCleanup(() => clearInterval(id));
 
   const hasData = () => !!data()?.bids?.length && !!data()?.asks?.length;
 
@@ -59,7 +42,7 @@ const OrderBook: Component<{ coinId: string }> = (props) => {
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-zinc-300">Order Book</h3>
-          <LiveDot show={hasData() && !loading()} />
+          <LiveDot show={hasData() && !data.loading} />
         </div>
         <Show when={hasData()}>
           <span class="text-[10px] text-zinc-500">
@@ -68,13 +51,13 @@ const OrderBook: Component<{ coinId: string }> = (props) => {
         </Show>
       </div>
 
-      <Show when={loading() && !hasData()}>
+      <Show when={data.loading && !hasData()}>
         <div class="space-y-1">
           <For each={Array(8).fill(0)}>{() => <Skeleton class="h-5 rounded" />}</For>
         </div>
       </Show>
 
-      <Show when={!loading() && !hasData()}>
+      <Show when={!data.loading && !hasData()}>
         <div class="py-8 text-center text-zinc-500 text-sm">Order book unavailable</div>
       </Show>
 

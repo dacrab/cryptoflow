@@ -36,7 +36,7 @@ const CoinList: Component<Props> = (props) => {
   });
 
   return (
-    <Card padding="none" class="overflow-hidden">
+    <Card class="overflow-hidden">
       <div class="hidden sm:grid grid-cols-[2rem_1fr_6rem_auto_2rem] items-center gap-3 px-3 py-2 border-b border-zinc-800/50 bg-zinc-900/30">
         <span class="text-[10px] text-zinc-600 text-right">#</span>
         <SortBtn label="Name" {...sortBtnProps('market_cap')} />
