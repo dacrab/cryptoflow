@@ -8,7 +8,7 @@ import PriceChart from '../components/PriceChart';
 import OrderBook from '../components/OrderBook';
 import RecentTrades from '../components/RecentTrades';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { Card, Button, Skeleton, ConnectionIndicator, StarIcon, Price, CoinAvatar, MiniStatCard } from '../components/ui';
+import { Card, Button, Skeleton, ConnectionIndicator, StarIcon, Price, CoinAvatar, StatCard } from '../components/ui';
 
 const CoinDetail: Component = () => {
   const params = useParams<{ id: string }>();
@@ -19,13 +19,13 @@ const CoinDetail: Component = () => {
 
   const isWatched = () => store.isWatched(params.id);
   const storeCoin = createMemo(() => store.getCoinById(params.id));
-  const isLive = () => store.connectionState() === 'connected' && !!storeCoin();
+  const isLive = createMemo(() => store.connectionState() === 'connected' && !!storeCoin());
 
-  const price = () => storeCoin()?.current_price ?? coin()?.market_data.current_price.usd ?? 0;
-  const change = () => storeCoin()?.price_change_percentage_24h ?? coin()?.market_data.price_change_percentage_24h ?? 0;
-  const volume = () => storeCoin()?.total_volume ?? coin()?.market_data.total_volume.usd ?? 0;
-  const high = () => storeCoin()?.high_24h ?? coin()?.market_data.high_24h.usd ?? 0;
-  const low = () => storeCoin()?.low_24h ?? coin()?.market_data.low_24h.usd ?? 0;
+  const price  = createMemo(() => storeCoin()?.current_price ?? coin()?.market_data.current_price.usd ?? 0);
+  const change = createMemo(() => storeCoin()?.price_change_percentage_24h ?? coin()?.market_data.price_change_percentage_24h ?? 0);
+  const volume = createMemo(() => storeCoin()?.total_volume ?? coin()?.market_data.total_volume.usd ?? 0);
+  const high   = createMemo(() => storeCoin()?.high_24h ?? coin()?.market_data.high_24h.usd ?? 0);
+  const low    = createMemo(() => storeCoin()?.low_24h ?? coin()?.market_data.low_24h.usd ?? 0);
 
   return (
     <div class="min-h-screen bg-[#09090b]">
@@ -71,7 +71,7 @@ const CoinDetail: Component = () => {
                     <div class="space-y-6">
                       <div class="flex items-start justify-between gap-4">
                         <div class="flex items-center gap-4">
-                          <CoinAvatar src={c().image.large} symbol={c().symbol} size="xl" class="ring-2 ring-white/10" />
+                          <CoinAvatar src={c().image.large} symbol={c().symbol} size="lg" class="ring-2 ring-white/10" />
                           <div>
                             <div class="flex items-center gap-2 mb-1">
                               <h1 class="text-2xl font-semibold">{c().name}</h1>
@@ -111,13 +111,13 @@ const CoinDetail: Component = () => {
                           <ConnectionIndicator state={store.connectionState()} onReconnect={store.reconnect} />
                         </div>
                         <div class="grid grid-cols-2 gap-3">
-                          <MiniStatCard label="Market Cap" value={`$${compactNum(c().market_data.market_cap.usd)}`} />
-                          <MiniStatCard label="Volume (24h)" value={`$${compactNum(volume())}`} live={isLive()} />
-                          <MiniStatCard label="24h High" value={fmt(high())} live={isLive()} />
-                          <MiniStatCard label="24h Low" value={fmt(low())} live={isLive()} />
-                          <MiniStatCard label="24h Change" value={`${change() >= 0 ? '+' : ''}${change().toFixed(2)}%`} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
-                          <MiniStatCard label="Circulating" value={compactNum(c().market_data.circulating_supply)} />
-                          <MiniStatCard label="Total Supply" value={c().market_data.total_supply ? compactNum(c().market_data.total_supply) : '∞'} />
+                          <StatCard label="Market Cap" value={`$${compactNum(c().market_data.market_cap.usd)}`} />
+                          <StatCard label="Volume (24h)" value={`$${compactNum(volume())}`} live={isLive()} />
+                          <StatCard label="24h High" value={fmt(high())} live={isLive()} />
+                          <StatCard label="24h Low" value={fmt(low())} live={isLive()} />
+                          <StatCard label="24h Change" value={`${change() >= 0 ? '+' : ''}${change().toFixed(2)}%`} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
+                          <StatCard label="Circulating" value={compactNum(c().market_data.circulating_supply)} />
+                          <StatCard label="Total Supply" value={c().market_data.total_supply ? compactNum(c().market_data.total_supply) : '∞'} />
                         </div>
                       </Card>
 

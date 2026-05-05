@@ -8,6 +8,8 @@ interface Props {
   livePrice?: number;
 }
 
+const SPARKLINE_MAX_PTS = 50;
+
 const Sparkline: Component<Props> = (props) => {
   const chart = createMemo(() => {
     let d = props.data;
@@ -15,7 +17,7 @@ const Sparkline: Component<Props> = (props) => {
 
     if (props.livePrice !== undefined) d = [...d, props.livePrice];
 
-    const step = Math.max(1, Math.floor(d.length / 50));
+    const step = Math.max(1, Math.floor(d.length / SPARKLINE_MAX_PTS));
     const sampled = d.filter((_, i) => i % step === 0 || i === d!.length - 1);
     const min = Math.min(...sampled), max = Math.max(...sampled), range = max - min || 1;
 

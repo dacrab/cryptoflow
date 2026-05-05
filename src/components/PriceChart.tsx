@@ -11,7 +11,8 @@ const RANGES = [
   { label: '1Y', days: 365 },
 ];
 
-const N = 80; // number of interpolated display points
+const CHART_POINTS = 80; // interpolated display points
+const CHART_Y_SCALE = 85; // % of SVG height used (leaves margin for labels)
 
 interface Point {
   x: number;
@@ -43,14 +44,14 @@ const PriceChart: Component<Props> = (props) => {
     const vals = d.map(p => p.price);
     const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
 
-    return Array.from({ length: N }, (_, i) => {
-      const idx = (i / (N - 1)) * (d.length - 1);
+    return Array.from({ length: CHART_POINTS }, (_, i) => {
+      const idx = (i / (CHART_POINTS - 1)) * (d.length - 1);
       const lo = Math.floor(idx), hi = Math.min(lo + 1, d.length - 1), t = idx - lo;
       const price = d[lo].price * (1 - t) + d[hi].price * t;
       const time  = d[lo].time  * (1 - t) + d[hi].time  * t;
       return {
-        x: (i / (N - 1)) * 100,
-        y: 100 - ((price - min) / range) * 85,
+        x: (i / (CHART_POINTS - 1)) * 100,
+        y: 100 - ((price - min) / range) * CHART_Y_SCALE,
         price,
         min, max, range,
         date: new Date(time * 1000).toLocaleDateString('en-US', {
@@ -72,7 +73,7 @@ const PriceChart: Component<Props> = (props) => {
 
     // Fast path: live price within historic range — just update the last point
     if (live >= bMin && live <= bMax) {
-      const last: Point = { ...base[base.length - 1], price: live, y: 100 - ((live - bMin) / bRange) * 85 };
+      const last: Point = { ...base[base.length - 1], price: live, y: 100 - ((live - bMin) / bRange) * CHART_Y_SCALE };
       return [...base.slice(0, -1), last];
     }
 
@@ -81,8 +82,8 @@ const PriceChart: Component<Props> = (props) => {
     const range = max - min || 1;
     return base.map((p, i): Point => ({
       ...p,
-      y: 100 - ((p.price - min) / range) * 85,
-      ...(i === base.length - 1 ? { price: live, y: 100 - ((live - min) / range) * 85 } : {}),
+      y: 100 - ((p.price - min) / range) * CHART_Y_SCALE,
+      ...(i === base.length - 1 ? { price: live, y: 100 - ((live - min) / range) * CHART_Y_SCALE } : {}),
     }));
   });
 

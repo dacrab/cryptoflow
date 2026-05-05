@@ -28,11 +28,3 @@ body {
   color: white;
 }
 
-/* Clickable elements */
-button, a, [role="button"], .cursor-pointer {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: not-allowed;
-}

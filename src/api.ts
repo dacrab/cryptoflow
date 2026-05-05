@@ -3,6 +3,16 @@ import type { Coin, CoinDetail, PricePoint } from './types';
 const API = 'https://api.binance.com/api/v3';
 const WS  = 'wss://stream.binance.com:9443/ws';
 
+// Cache TTLs (ms)
+const TTL_COINS    = 30_000;
+const TTL_HISTORY  = 300_000;
+
+// Market cap proxy multiplier (volume * factor ≈ market cap estimate)
+const MCAP_VOL_FACTOR = 10;
+
+// Max coins / WS streams
+const COINS_LIMIT = 100;
+
 const EXCLUDE = new Set(['USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI', 'USDD', 'USDP', 'WBTC', 'WBETH', 'STETH', 'BETH']);
 
 // Simple cache - just store data with timestamp
@@ -20,10 +30,6 @@ const fetchJson = async <T>(url: string): Promise<T> => {
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
 };
-
-// ============================================
-// Realtime WebSocket
-// ============================================
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
 
@@ -112,7 +118,7 @@ class RealtimeManager {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.setState('connecting');
 
-    const streams = this.symbols.slice(0, 100).map(s => `${s.toLowerCase()}usdt@ticker`).join('/');
+    const streams = this.symbols.slice(0, COINS_LIMIT).map(s => `${s.toLowerCase()}usdt@ticker`).join('/');
 
     try {
       this.ws = new WebSocket(`${WS}/${streams}`);
@@ -162,17 +168,13 @@ class RealtimeManager {
 
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    const delay = Math.min(1_000 * Math.pow(2, this.reconnectAttempts), 30_000);
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, delay);
   }
 }
 
 export const realtime = new RealtimeManager();
-
-// ============================================
-// Coin Name Mapping
-// ============================================
 
 const NAMES: Record<string, string> = {
   BTC: 'Bitcoin', ETH: 'Ethereum', BNB: 'BNB', SOL: 'Solana', XRP: 'XRP',
@@ -207,10 +209,6 @@ const idToSymbol = (id: string): string => {
   return id.toUpperCase();
 };
 
-// ============================================
-// API Functions
-// ============================================
-
 interface Ticker {
   symbol: string;
   lastPrice: string;
@@ -221,7 +219,7 @@ interface Ticker {
 }
 
 async function getAllTickers(): Promise<Ticker[]> {
-  const cached = getCache<Ticker[]>('tickers', 10000);
+  const cached = getCache<Ticker[]>('tickers', 10_000);
   if (cached) return cached;
   
   const data = await fetchJson<Ticker[]>(`${API}/ticker/24hr`);
@@ -231,23 +229,16 @@ async function getAllTickers(): Promise<Ticker[]> {
 
 const sparklineCache = new Map<string, number[]>();
 let sparklineLoadPromise: Promise<void> | null = null;
-let sparklinesReadyCallbacks: ((data: Map<string, number[]>) => void)[] = [];
-
-export function onSparklinesReady(callback: (data: Map<string, number[]>) => void) {
-  sparklinesReadyCallbacks.push(callback);
-}
 
 async function loadSparklinesInBackground(syms: string[]) {
   const results = await Promise.allSettled(syms.map(sym => getSparkline(sym)));
   results.forEach((result, i) => {
     if (result.status === 'fulfilled' && result.value) sparklineCache.set(syms[i], result.value);
   });
-  sparklinesReadyCallbacks.forEach(cb => cb(sparklineCache));
-  sparklinesReadyCallbacks = [];
 }
 
-export async function getCoins(limit = 100): Promise<Coin[]> {
-  const cached = getCache<Coin[]>(`coins_${limit}`, 30000);
+export async function getCoins(limit = COINS_LIMIT): Promise<Coin[]> {
+  const cached = getCache<Coin[]>(`coins_${limit}`, TTL_COINS);
   if (cached) {
     if (sparklineCache.size < limit && !sparklineLoadPromise) {
       const syms = cached.map(c => c.symbol.toUpperCase());
@@ -286,7 +277,7 @@ export async function getCoins(limit = 100): Promise<Coin[]> {
       image: `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`,
       current_price: parseFloat(t.lastPrice),
       price_change_percentage_24h: parseFloat(t.priceChangePercent),
-      market_cap: vol * 10,
+      market_cap: vol * MCAP_VOL_FACTOR,
       market_cap_rank: i + 1,
       total_volume: vol,
       high_24h: parseFloat(t.highPrice),
@@ -314,7 +305,7 @@ export async function getCoins(limit = 100): Promise<Coin[]> {
 }
 
 async function getSparkline(sym: string): Promise<number[] | null> {
-  const cached = getCache<number[]>(`spark_${sym}`, 300000);
+  const cached = getCache<number[]>(`spark_${sym}`, 300_000);
   if (cached) return cached;
 
   try {
@@ -349,7 +340,7 @@ export async function getCoin(id: string): Promise<CoinDetail> {
     market_data: {
       current_price: { usd: price },
       price_change_percentage_24h: change,
-      market_cap: { usd: vol * 10 },
+      market_cap: { usd: vol * MCAP_VOL_FACTOR },
       total_volume: { usd: vol },
       high_24h: { usd: parseFloat(ticker.highPrice) },
       low_24h: { usd: parseFloat(ticker.lowPrice) },
@@ -360,7 +351,7 @@ export async function getCoin(id: string): Promise<CoinDetail> {
 }
 
 export async function getHistory(id: string, days: number): Promise<PricePoint[]> {
-  const cached = getCache<PricePoint[]>(`hist_${id}_${days}`, days <= 1 ? 60000 : 300000);
+  const cached = getCache<PricePoint[]>(`hist_${id}_${days}`, days <= 1 ? 60_000 : TTL_HISTORY);
   if (cached) return cached;
 
   const sym = idToSymbol(id);
@@ -378,10 +369,6 @@ export async function getHistory(id: string, days: number): Promise<PricePoint[]
 export const prefetch = (id: string) => {
   [1, 7, 30, 90, 365].forEach(d => getHistory(id, d).catch(() => {}));
 };
-
-// ============================================
-// Order Book & Trades
-// ============================================
 
 export interface OrderBookData {
   bids: [string, string][];
@@ -403,7 +390,7 @@ export interface Trade {
 
 export async function getOrderBook(id: string, limit = 10): Promise<OrderBookData | null> {
   const sym = idToSymbol(id);
-  const cached = getCache<OrderBookData>(`orderbook_${id}`, 5000);
+  const cached = getCache<OrderBookData>(`orderbook_${id}`, 5_000);
   if (cached) return cached;
 
   try {
@@ -431,7 +418,7 @@ export async function getOrderBook(id: string, limit = 10): Promise<OrderBookDat
 
 export async function getRecentTrades(id: string, limit = 20): Promise<Trade[]> {
   const sym = idToSymbol(id);
-  const cached = getCache<Trade[]>(`trades_${id}`, 3000);
+  const cached = getCache<Trade[]>(`trades_${id}`, 3_000);
   if (cached) return cached;
 
   try {

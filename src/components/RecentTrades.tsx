@@ -1,4 +1,4 @@
-import { Component, Show, For, createMemo, createSignal, createEffect, onCleanup } from 'solid-js';
+import { Component, Show, For, createMemo, createResource, onCleanup } from 'solid-js';
 import { getRecentTrades, type Trade } from '../api';
 import { fmt } from '../utils';
 import { Card, Skeleton, LiveDot } from './ui';
@@ -12,27 +12,10 @@ const formatQty = (qty: number) => {
 };
 
 const RecentTrades: Component<{ coinId: string }> = (props) => {
-  const [trades, setTrades] = createSignal<Trade[]>([]);
-  const [loading, setLoading] = createSignal(true);
+  const [trades, { refetch }] = createResource(() => props.coinId, (id) => getRecentTrades(id, 15));
 
-  createEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setTrades([]);
-
-    const run = async () => {
-      try {
-        const result = await getRecentTrades(props.coinId, 15);
-        if (!cancelled && result) setTrades(result);
-      } catch {} finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    run();
-    const id = setInterval(run, 1500);
-    onCleanup(() => { cancelled = true; clearInterval(id); });
-  });
+  const id = setInterval(refetch, 1_500);
+  onCleanup(() => clearInterval(id));
 
   const hasData = () => (trades()?.length ?? 0) > 0;
 
@@ -52,7 +35,7 @@ const RecentTrades: Component<{ coinId: string }> = (props) => {
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
           <h3 class="text-sm font-medium text-zinc-300">Recent Trades</h3>
-          <LiveDot show={hasData() && !loading()} />
+          <LiveDot show={hasData() && !trades.loading} />
         </div>
         <span class="text-[10px] text-zinc-500">Live</span>
       </div>
@@ -63,13 +46,13 @@ const RecentTrades: Component<{ coinId: string }> = (props) => {
         <span class="text-right w-16">Time</span>
       </div>
 
-      <Show when={loading() && !hasData()}>
+      <Show when={trades.loading && !hasData()}>
         <div class="space-y-1 mt-2">
           <For each={Array(10).fill(0)}>{() => <Skeleton class="h-5 rounded" />}</For>
         </div>
       </Show>
 
-      <Show when={!loading() && !hasData()}>
+      <Show when={!trades.loading && !hasData()}>
         <div class="py-8 text-center text-zinc-500 text-sm">Trades unavailable</div>
       </Show>
 

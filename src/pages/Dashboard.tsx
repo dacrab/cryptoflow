@@ -8,6 +8,14 @@ import CoinList from '../components/CoinList';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Card, StatCard, Price, CoinAvatar } from '../components/ui';
 
+const MiniRow: Component<{ coin: Coin }> = (p) => (
+  <A href={`/coin/${p.coin.id}`} class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
+    <CoinAvatar src={p.coin.image} symbol={p.coin.symbol} size="sm" />
+    <span class="flex-1 text-sm font-medium truncate">{p.coin.symbol.toUpperCase()}</span>
+    <Price price={p.coin.current_price} change={p.coin.price_change_percentage_24h} size="sm" />
+  </A>
+);
+
 const Dashboard: Component = () => {
   const store = useStore();
 
@@ -20,7 +28,7 @@ const Dashboard: Component = () => {
       if (e.key === 'Escape') store.clearSearch();
     };
     window.addEventListener('keydown', onKey);
-    const interval = setInterval(store.refetch, 300_000);
+    const interval = setInterval(store.refetch, 5 * 60_000);
     onCleanup(() => { window.removeEventListener('keydown', onKey); clearInterval(interval); });
   });
 
@@ -39,14 +47,6 @@ const Dashboard: Component = () => {
     for (const c of coins) { mcap += c.market_cap; vol += c.total_volume; }
     return { mcap, vol, up: store.stats().gainers, down: store.stats().losers };
   });
-
-  const MiniRow: Component<{ coin: Coin }> = (p) => (
-    <A href={`/coin/${p.coin.id}`} class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
-      <CoinAvatar src={p.coin.image} symbol={p.coin.symbol} size="sm" />
-      <span class="flex-1 text-sm font-medium truncate">{p.coin.symbol.toUpperCase()}</span>
-      <Price price={p.coin.current_price} change={p.coin.price_change_percentage_24h} size="sm" />
-    </A>
-  );
 
   return (
     <div class="min-h-screen bg-[#09090b]">

@@ -55,19 +55,6 @@ export const StatCard: Component<{ label: string; value: string | number; live?:
   );
 };
 
-export const MiniStatCard: Component<{ label: string; value: string | number; live?: boolean; variant?: 'default' | 'success' | 'danger' }> = (props) => {
-  const color = () => props.variant === 'success' ? 'text-emerald-400' : props.variant === 'danger' ? 'text-red-400' : '';
-  return (
-    <div class="bg-zinc-800/30 rounded-lg p-3">
-      <div class="flex items-center gap-1.5 mb-1">
-        <span class="text-[10px] text-zinc-500 uppercase">{props.label}</span>
-        <LiveDot show={props.live ?? false} />
-      </div>
-      <div class={`text-sm font-mono ${color()}`}>{props.value}</div>
-    </div>
-  );
-};
-
 export const CoinAvatar: Component<{ src: string; symbol: string; size?: 'sm' | 'md' | 'lg' }> = (props) => {
   const sizeClass = () => props.size === 'sm' ? 'w-6 h-6' : props.size === 'lg' ? 'w-10 h-10' : 'w-8 h-8';
   const fallbackSize = () => props.size === 'sm' ? 24 : props.size === 'lg' ? 40 : 32;

@@ -1,6 +1,6 @@
 import { createStore, produce } from 'solid-js/store';
 import { createResource, createEffect, createMemo, createContext, useContext, on, onCleanup, createSignal } from 'solid-js';
-import { getCoins, realtime, onSparklinesReady, type ConnectionState, type RealtimeData } from './api';
+import { getCoins, realtime, type ConnectionState, type RealtimeData } from './api';
 import type { Coin, SortField, SortDirection } from './types';
 
 interface State {
@@ -34,13 +34,6 @@ function createAppStore() {
   createEffect(on(() => coinsResource(), (newCoins) => {
     if (newCoins.length) setCoins(newCoins);
   }));
-
-  onSparklinesReady((sparklines: Map<string, number[]>) => {
-    coins.forEach((coin, i) => {
-      const data = sparklines.get(coin.symbol.toUpperCase());
-      if (data) setCoins(i, 'sparkline_in_7d', { price: data });
-    });
-  });
 
   const unsubState = realtime.subscribeState(setConnectionState);
   const unsub = realtime.subscribe((symbol: string, data: RealtimeData) => {
