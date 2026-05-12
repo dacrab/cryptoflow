@@ -1,8 +1,13 @@
 import { render } from 'solid-js/web';
 import { Router, Route } from '@solidjs/router';
 import { lazy, Suspense } from 'solid-js';
+import { inject } from '@vercel/analytics';
+import { injectSpeedInsights } from '@vercel/speed-insights';
 import { StoreProvider } from './store';
 import './index.css';
+
+inject();
+injectSpeedInsights();
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CoinDetail = lazy(() => import('./pages/CoinDetail'));
