@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   ci:
-    uses: dacrab/.github-workflows/.github/workflows/bun-ci.yml@v1
+    uses: dacrab/.github-workflows/.github/workflows/bun-ci.yml@557d081a9d42da0f0c69368256bcc5caf91ada61 # v1.2.0
     with:
       check-cmd: ''
       test-cmd: ''
@@ -26,6 +26,6 @@ jobs:
     permissions:
       pull-requests: write
       contents: write
-    uses: dacrab/.github-workflows/.github/workflows/dependabot-auto-merge.yml@v1
+    uses: dacrab/.github-workflows/.github/workflows/dependabot-auto-merge.yml@557d081a9d42da0f0c69368256bcc5caf91ada61 # v1.2.0
     with:
       target: minor
