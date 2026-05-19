@@ -1,5 +1,5 @@
 import { createStore, produce } from 'solid-js/store';
-import { createResource, createEffect, createMemo, createContext, useContext, on, onCleanup, createSignal } from 'solid-js';
+import { createResource, createEffect, createMemo, createContext, useContext, on, onCleanup, createSignal, startTransition, batch, createSelector } from 'solid-js';
 import { getCoins, realtime, type ConnectionState, type RealtimeData } from './api';
 import type { Coin, SortField, SortDirection } from './types';
 
@@ -53,9 +53,12 @@ function createAppStore() {
   createEffect(on(() => state.watchlist, (list) => localStorage.setItem('watchlist', JSON.stringify(list)), { defer: true }));
   createEffect(on(() => state.sort, (sort) => localStorage.setItem('sort', JSON.stringify(sort)), { defer: true }));
 
-  const isWatched = (id: string) => state.watchlist.includes(id);
+  const isWatched = createSelector(
+    () => state.watchlist,
+    (id: string, list) => list.includes(id)
+  );
 
-  const setSearch = (s: string) => setState('search', s);
+  const setSearch = (s: string) => startTransition(() => setState('search', s));
   const clearSearch = () => setState('search', '');
   const toggleWatchlistOnly = () => setState('watchlistOnly', !state.watchlistOnly);
 

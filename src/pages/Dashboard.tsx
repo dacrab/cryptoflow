@@ -1,4 +1,4 @@
-import { Component, Show, Index, onMount, onCleanup, createMemo } from 'solid-js';
+import { Component, Show, Index, onMount, onCleanup, createMemo, batch } from 'solid-js';
 import { A } from '@solidjs/router';
 import { useStore } from '../store';
 import type { Coin } from '../types';
@@ -88,7 +88,7 @@ const Dashboard: Component = () => {
                     <Show when={!store.loading()}><span class="text-xs text-zinc-600">{store.stats().filtered}</span></Show>
                   </div>
                   <Show when={store.state.search || store.state.watchlistOnly}>
-                    <button onClick={() => { store.clearSearch(); if (store.state.watchlistOnly) store.toggleWatchlistOnly(); }} class="text-xs text-zinc-500 hover:text-white transition-colors">Clear</button>
+                    <button onClick={() => batch(() => { store.clearSearch(); if (store.state.watchlistOnly) store.toggleWatchlistOnly(); })} class="text-xs text-zinc-500 hover:text-white transition-colors">Clear</button>
                   </Show>
                 </div>
                 <CoinList
