@@ -24,11 +24,13 @@ function PageSkeleton() {
 function App() {
   return (
     <StoreProvider>
-      <Router>
-        <Route path="/" component={() => <Suspense fallback={<PageSkeleton />}><Dashboard /></Suspense>} />
-        <Route path="/coin/:id" component={() => <Suspense fallback={<PageSkeleton />}><CoinDetail /></Suspense>} />
-        <Route path="*" component={() => <Suspense fallback={<PageSkeleton />}><NotFound /></Suspense>} />
-      </Router>
+      <Suspense fallback={<PageSkeleton />}>
+        <Router>
+          <Route path="/" component={Dashboard} />
+          <Route path="/coin/:id" component={CoinDetail} />
+          <Route path="*" component={NotFound} />
+        </Router>
+      </Suspense>
     </StoreProvider>
   );
 }
