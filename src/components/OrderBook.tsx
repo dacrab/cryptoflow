@@ -18,8 +18,17 @@ const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' 
 const OrderBook: Component<{ coinId: string }> = (props) => {
   const [data, { refetch }] = createResource(() => props.coinId, (id) => getOrderBook(id, 8));
 
-  const id = setInterval(refetch, 2_000);
-  onCleanup(() => clearInterval(id));
+  const id = setInterval(() => {
+    if (document.visibilityState === 'visible') refetch();
+  }, 2_000);
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') refetch();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  onCleanup(() => {
+    clearInterval(id);
+    document.removeEventListener('visibilitychange', onVisibility);
+  });
 
   const hasData = () => !!data()?.bids?.length && !!data()?.asks?.length;
 

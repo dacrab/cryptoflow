@@ -31,14 +31,19 @@ function createAppStore() {
   const [connectionState, setConnectionState] = createSignal<ConnectionState>('disconnected');
   const [coinsResource, { refetch }] = createResource(() => getCoins(), { initialValue: [] });
 
+  const symbolIndex = new Map<string, number>();
   createEffect(on(() => coinsResource(), (newCoins) => {
-    if (newCoins.length) setCoins(newCoins);
+    if (newCoins.length) {
+      setCoins(newCoins);
+      symbolIndex.clear();
+      newCoins.forEach((c, i) => symbolIndex.set(c.symbol.toUpperCase(), i));
+    }
   }));
 
   const unsubState = realtime.subscribeState(setConnectionState);
   const unsub = realtime.subscribe((symbol: string, data: RealtimeData) => {
-    const i = coins.findIndex(c => c.symbol.toUpperCase() === symbol);
-    if (i >= 0) {
+    const i = symbolIndex.get(symbol);
+    if (i !== undefined) {
       setCoins(i, {
         current_price: data.price,
         price_change_percentage_24h: data.change,

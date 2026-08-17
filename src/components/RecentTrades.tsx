@@ -14,8 +14,17 @@ const formatQty = (qty: number) => {
 const RecentTrades: Component<{ coinId: string }> = (props) => {
   const [trades, { refetch }] = createResource(() => props.coinId, (id) => getRecentTrades(id, 15));
 
-  const id = setInterval(refetch, 1_500);
-  onCleanup(() => clearInterval(id));
+  const id = setInterval(() => {
+    if (document.visibilityState === 'visible') refetch();
+  }, 1_500);
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') refetch();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  onCleanup(() => {
+    clearInterval(id);
+    document.removeEventListener('visibilitychange', onVisibility);
+  });
 
   const hasData = () => (trades()?.length ?? 0) > 0;
 
