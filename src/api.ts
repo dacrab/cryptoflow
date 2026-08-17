@@ -16,6 +16,7 @@ const COINS_LIMIT = 100;
 const EXCLUDE = new Set(['USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI', 'USDD', 'USDP', 'WBTC', 'WBETH', 'STETH', 'BETH']);
 
 // Simple cache - just store data with timestamp
+const CACHE_MAX = 200;
 const cache = new Map<string, { data: unknown; ts: number }>();
 
 const getCache = <T>(key: string, ttl: number): T | null => {
@@ -23,7 +24,13 @@ const getCache = <T>(key: string, ttl: number): T | null => {
   return entry && Date.now() - entry.ts < ttl ? (entry.data as T) : null;
 };
 
-const setCache = (key: string, data: unknown) => cache.set(key, { data, ts: Date.now() });
+const setCache = (key: string, data: unknown) => {
+  if (cache.size >= CACHE_MAX && !cache.has(key)) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, { data, ts: Date.now() });
+};
 
 const fetchJson = async <T>(url: string): Promise<T> => {
   const res = await fetch(url);
@@ -134,8 +141,13 @@ class RealtimeManager {
 
     this.ws.onmessage = (e) => {
       try {
-        const d = JSON.parse(e.data);
+        const d = JSON.parse(e.data) as {
+          e?: unknown; s?: unknown; c?: unknown; o?: unknown;
+          q?: unknown; h?: unknown; l?: unknown;
+        };
         if (d.e !== '24hrTicker') return;
+        if (typeof d.s !== 'string' || typeof d.c !== 'string' || typeof d.o !== 'string' ||
+            typeof d.q !== 'string' || typeof d.h !== 'string' || typeof d.l !== 'string') return;
 
         const sym = d.s.replace('USDT', '');
         const price = parseFloat(d.c);

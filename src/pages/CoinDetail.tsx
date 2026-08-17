@@ -26,6 +26,11 @@ const CoinDetail: Component = () => {
   const volume = createMemo(() => storeCoin()?.total_volume ?? coin()?.market_data.total_volume.usd ?? 0);
   const high   = createMemo(() => storeCoin()?.high_24h ?? coin()?.market_data.high_24h.usd ?? 0);
   const low    = createMemo(() => storeCoin()?.low_24h ?? coin()?.market_data.low_24h.usd ?? 0);
+  const totalSupply = createMemo(() => coin()?.market_data.total_supply ?? null);
+  const supplyLabel = () => {
+    const s = totalSupply();
+    return s ? compactNum(s) : 'N/A';
+  };
 
   return (
     <div class="min-h-screen bg-[#09090b]">
@@ -76,7 +81,9 @@ const CoinDetail: Component = () => {
                             <div class="flex items-center gap-2 mb-1">
                               <h1 class="text-2xl font-semibold">{c().name}</h1>
                               <span class="text-sm text-zinc-500 uppercase">{c().symbol}</span>
-                              <span class="px-2 py-0.5 text-xs text-zinc-400 bg-white/5 rounded-full">#{c().market_cap_rank}</span>
+                              <Show when={c().market_cap_rank > 0}>
+                                <span class="px-2 py-0.5 text-xs text-zinc-400 bg-white/5 rounded-full">#{c().market_cap_rank}</span>
+                              </Show>
                             </div>
                             <div class="flex items-baseline gap-2">
                               <Price price={price()} change={change()} size="lg" class="text-left" />
@@ -95,29 +102,23 @@ const CoinDetail: Component = () => {
                         <OrderBook coinId={params.id} />
                         <RecentTrades coinId={params.id} />
                       </div>
-
-                      <Show when={c().description?.en}>
-                        <Card>
-                          <h2 class="text-sm font-medium text-zinc-300 mb-3">About {c().name}</h2>
-                          <p class="text-sm text-zinc-400 leading-relaxed line-clamp-4" innerHTML={c().description.en.split('. ').slice(0, 4).join('. ') + '.'} />
-                        </Card>
-                      </Show>
                     </div>
 
                     <div class="space-y-4">
                       <Card>
-                        <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center justify-between mb-1">
                           <h2 class="text-sm font-medium text-zinc-300">Market Stats</h2>
                           <ConnectionIndicator state={store.connectionState()} onReconnect={store.reconnect} />
                         </div>
+                        <p class="text-[10px] text-zinc-600 mb-4">Market cap and supply figures are estimates derived from trading volume.</p>
                         <div class="grid grid-cols-2 gap-3">
-                          <StatCard label="Market Cap" value={`$${compactNum(c().market_data.market_cap.usd)}`} />
+                          <StatCard label="Market Cap (Est.)" value={`$${compactNum(c().market_data.market_cap.usd)}`} />
                           <StatCard label="Volume (24h)" value={`$${compactNum(volume())}`} live={isLive()} />
                           <StatCard label="24h High" value={fmt(high())} live={isLive()} />
                           <StatCard label="24h Low" value={fmt(low())} live={isLive()} />
                           <StatCard label="24h Change" value={`${change() >= 0 ? '+' : ''}${change().toFixed(2)}%`} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
-                          <StatCard label="Circulating" value={compactNum(c().market_data.circulating_supply)} />
-                          <StatCard label="Total Supply" value={c().market_data.total_supply ? compactNum(c().market_data.total_supply) : '∞'} />
+                          <StatCard label="Circulating" value={c().market_data.circulating_supply > 0 ? compactNum(c().market_data.circulating_supply) : 'N/A'} />
+                          <StatCard label="Total Supply" value={supplyLabel()} />
                         </div>
                       </Card>
 

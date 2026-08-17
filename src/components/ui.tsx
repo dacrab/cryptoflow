@@ -2,8 +2,8 @@ import { Component, ParentComponent, For, Show, createSignal, createEffect, on, 
 import { fmt } from '../utils';
 import type { ConnectionState } from '../api';
 
-export const Card: ParentComponent<{ class?: string }> = (props) => (
-  <div class={`bg-zinc-900/50 rounded-xl border border-zinc-800/50 p-4 ${props.class ?? ''}`}>
+export const Card: ParentComponent<{ class?: string; padding?: 'none' }> = (props) => (
+  <div class={`bg-zinc-900/50 rounded-xl border border-zinc-800/50 ${props.padding === 'none' ? 'p-0' : 'p-4'} ${props.class ?? ''}`}>
     {props.children}
   </div>
 );
@@ -55,7 +55,7 @@ export const StatCard: Component<{ label: string; value: string | number; live?:
   );
 };
 
-export const CoinAvatar: Component<{ src: string; symbol: string; size?: 'sm' | 'md' | 'lg' }> = (props) => {
+export const CoinAvatar: Component<{ src: string; symbol: string; size?: 'sm' | 'md' | 'lg'; class?: string }> = (props) => {
   const sizeClass = () => props.size === 'sm' ? 'w-6 h-6' : props.size === 'lg' ? 'w-10 h-10' : 'w-8 h-8';
   const fallbackSize = () => props.size === 'sm' ? 24 : props.size === 'lg' ? 40 : 32;
 
@@ -73,7 +73,7 @@ export const CoinAvatar: Component<{ src: string; symbol: string; size?: 'sm' | 
     <img
       src={props.src}
       alt={props.symbol}
-      class={`${sizeClass()} rounded-full ring-1 ring-white/10`}
+      class={`${sizeClass()} rounded-full ring-1 ring-white/10 ${props.class ?? ''}`}
       loading="lazy"
       onError={handleError}
     />
