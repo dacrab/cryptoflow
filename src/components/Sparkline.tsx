@@ -12,13 +12,13 @@ const SPARKLINE_MAX_PTS = 50;
 
 const Sparkline: Component<Props> = (props) => {
   const chart = createMemo(() => {
-    let d = props.data;
-    if (!d || d.length < 2) return null;
+    let data = props.data;
+    if (!data || data.length < 2) return null;
 
-    if (props.livePrice !== undefined) d = [...d, props.livePrice];
+    if (props.livePrice !== undefined) data = [...data, props.livePrice];
 
-    const step = Math.max(1, Math.floor(d.length / SPARKLINE_MAX_PTS));
-    const sampled = d.filter((_, i) => i % step === 0 || i === d!.length - 1);
+    const step = Math.max(1, Math.floor(data.length / SPARKLINE_MAX_PTS));
+    const sampled = data.filter((_, i) => i % step === 0 || i === data.length - 1);
     const min = Math.min(...sampled), max = Math.max(...sampled), range = max - min || 1;
 
     const pts = sampled.map((v, i) => ({

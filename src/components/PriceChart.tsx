@@ -1,14 +1,14 @@
 import { Component, createSignal, createResource, createMemo, Show, For, Switch, Match } from 'solid-js';
-import { getHistory } from '../api';
+import { getHistory, HISTORY_RANGES } from '../api';
 import { fmt } from '../utils';
 import { Skeleton, LiveDot } from './ui';
 
-const RANGES = [
-  { label: '24H', days: 1 },
-  { label: '7D', days: 7 },
-  { label: '30D', days: 30 },
-  { label: '90D', days: 90 },
-  { label: '1Y', days: 365 },
+const RANGES: { label: string; days: number }[] = [
+  { label: '24H', days: HISTORY_RANGES[0] },
+  { label: '7D', days: HISTORY_RANGES[1] },
+  { label: '30D', days: HISTORY_RANGES[2] },
+  { label: '90D', days: HISTORY_RANGES[3] },
+  { label: '1Y', days: HISTORY_RANGES[4] },
 ];
 
 const CHART_POINTS = 80; // interpolated display points
