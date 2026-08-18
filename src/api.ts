@@ -15,6 +15,11 @@ const COINS_LIMIT = 100;
 
 const EXCLUDE = new Set(['USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI', 'USDD', 'USDP', 'WBTC', 'WBETH', 'STETH', 'BETH']);
 
+export const HISTORY_RANGES = [1, 7, 30, 90, 365] as const;
+
+const coinImage = (sym: string) =>
+  `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`;
+
 // Simple cache - just store data with timestamp
 const CACHE_MAX = 200;
 const cache = new Map<string, { data: unknown; ts: number }>();
@@ -286,7 +291,7 @@ export async function getCoins(limit = COINS_LIMIT): Promise<Coin[]> {
       id: toId(sym),
       symbol: sym.toLowerCase(),
       name: getName(sym),
-      image: `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`,
+      image: coinImage(sym),
       current_price: parseFloat(t.lastPrice),
       price_change_percentage_24h: parseFloat(t.priceChangePercent),
       market_cap: vol * MCAP_VOL_FACTOR,
@@ -317,7 +322,7 @@ export async function getCoins(limit = COINS_LIMIT): Promise<Coin[]> {
 }
 
 async function getSparkline(sym: string): Promise<number[] | null> {
-  const cached = getCache<number[]>(`spark_${sym}`, 300_000);
+  const cached = getCache<number[]>(`spark_${sym}`, TTL_HISTORY);
   if (cached) return cached;
 
   try {
@@ -346,7 +351,7 @@ export async function getCoin(id: string): Promise<CoinDetail> {
     id,
     symbol: sym.toLowerCase(),
     name: getName(sym),
-    image: { large: `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym.toLowerCase()}.png`, small: '' },
+    image: { large: coinImage(sym), small: '' },
     description: { en: '' },
     market_cap_rank: 0,
     market_data: {
@@ -379,7 +384,7 @@ export async function getHistory(id: string, days: number): Promise<PricePoint[]
 }
 
 export const prefetch = (id: string) => {
-  [1, 7, 30, 90, 365].forEach(d => getHistory(id, d).catch(() => {}));
+  HISTORY_RANGES.forEach((d) => getHistory(id, d).catch(() => {}));
 };
 
 export interface OrderBookData {
