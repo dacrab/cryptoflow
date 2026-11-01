@@ -1,157 +1,281 @@
-import { Component, createResource, Show, Switch, Match, createMemo, onMount, For } from 'solid-js';
-import { useParams } from '@solidjs/router';
-import { useStore } from '../store';
-import { getCoin, prefetch } from '../api';
-import { fmt, compactNum } from '../utils';
-import Header from '../components/Header';
-import PriceChart from '../components/PriceChart';
-import OrderBook from '../components/OrderBook';
-import RecentTrades from '../components/RecentTrades';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { Card, Button, Skeleton, ConnectionIndicator, StarIcon, Price, CoinAvatar, StatCard } from '../components/ui';
+import {
+  Index,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  on,
+  onCleanup,
+} from 'solid-js';
+import { A, useParams } from '@solidjs/router';
+import { useMarket } from '../lib/market';
+import { useToast } from '../lib/toast';
+import { compact, price as formatPrice, rangePosition, time, usdCompact } from '../lib/format';
+import { Button, Change, CoinIcon, Empty, Panel, Price, RangeMeter, Skeleton } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { PriceChart } from '../components/PriceChart';
+import { OrderBook } from '../components/OrderBook';
+import { RecentTrades } from '../components/RecentTrades';
 
-const CoinDetail: Component = () => {
-  const params = useParams<{ id: string }>();
-  const store = useStore();
-  const [coin] = createResource(() => params.id, getCoin);
-
-  onMount(() => prefetch(params.id));
-
-  const isWatched = () => store.isWatched(params.id);
-  const storeCoin = createMemo(() => store.getCoinById(params.id));
-  const isLive = createMemo(() => store.connectionState() === 'connected' && !!storeCoin());
-
-  const price  = createMemo(() => storeCoin()?.current_price ?? coin()?.market_data.current_price.usd ?? 0);
-  const change = createMemo(() => storeCoin()?.price_change_percentage_24h ?? coin()?.market_data.price_change_percentage_24h ?? 0);
-  const volume = createMemo(() => storeCoin()?.total_volume ?? coin()?.market_data.total_volume.usd ?? 0);
-  const high   = createMemo(() => storeCoin()?.high_24h ?? coin()?.market_data.high_24h.usd ?? 0);
-  const low    = createMemo(() => storeCoin()?.low_24h ?? coin()?.market_data.low_24h.usd ?? 0);
-  const totalSupply = createMemo(() => coin()?.market_data.total_supply ?? null);
-  const supplyLabel = () => {
-    const s = totalSupply();
-    return s ? compactNum(s) : 'N/A';
-  };
-
+function CoinSkeleton() {
   return (
-    <div class="min-h-screen bg-[#09090b]">
-      <Header />
-      <main class="py-6">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <ErrorBoundary>
-            <Switch>
-              <Match when={coin.loading}>
-                <div class="grid lg:grid-cols-[1fr_340px] gap-6">
-                  <div class="space-y-6">
-                    <div class="flex items-center gap-4">
-                      <Skeleton class="w-14 h-14 rounded-full" />
-                      <div class="space-y-2"><Skeleton class="w-40 h-6" /><Skeleton class="w-32 h-8" /></div>
-                    </div>
-                    <Card><Skeleton class="w-full h-56" /></Card>
-                    <div class="grid md:grid-cols-2 gap-4">
-                      <Skeleton class="h-80 rounded-xl" />
-                      <Skeleton class="h-80 rounded-xl" />
-                    </div>
-                  </div>
-                  <div class="space-y-4">
-                    <Card class="space-y-3">
-                      <Skeleton class="w-24 h-4" />
-                      <div class="grid grid-cols-2 gap-3">
-                        <For each={Array(8).fill(0)}>{() => <Skeleton class="h-14 rounded-lg" />}</For>
-                      </div>
-                    </Card>
-                  </div>
-                </div>
-              </Match>
-
-              <Match when={coin.error}>
-                <div class="py-12 text-center">
-                  <div class="text-red-400 mb-2">Failed to load coin</div>
-                  <div class="text-sm text-zinc-600">{coin.error?.message}</div>
-                </div>
-              </Match>
-
-              <Match when={coin()}>
-                {(c) => (
-                  <div class="grid lg:grid-cols-[1fr_340px] gap-6">
-                    <div class="space-y-6">
-                      <div class="flex items-start justify-between gap-4">
-                        <div class="flex items-center gap-4">
-                          <CoinAvatar src={c().image.large} symbol={c().symbol} size="lg" class="ring-2 ring-white/10" />
-                          <div>
-                            <div class="flex items-center gap-2 mb-1">
-                              <h1 class="text-2xl font-semibold">{c().name}</h1>
-                              <span class="text-sm text-zinc-500 uppercase">{c().symbol}</span>
-                              <Show when={c().market_cap_rank > 0}>
-                                <span class="px-2 py-0.5 text-xs text-zinc-400 bg-white/5 rounded-full">#{c().market_cap_rank}</span>
-                              </Show>
-                            </div>
-                            <div class="flex items-baseline gap-2">
-                              <Price price={price()} change={change()} size="lg" class="text-left" />
-                            </div>
-                          </div>
-                        </div>
-                        <Button variant={isWatched() ? 'secondary' : 'ghost'} onClick={() => store.toggleWatch(params.id)} class={isWatched() ? 'text-amber-400' : ''}>
-                          <StarIcon filled={isWatched()} />
-                          {isWatched() ? 'Watching' : 'Watch'}
-                        </Button>
-                      </div>
-
-                      <Card><PriceChart coinId={params.id} livePrice={storeCoin()?.current_price} /></Card>
-
-                      <div class="grid md:grid-cols-2 gap-4">
-                        <OrderBook coinId={params.id} />
-                        <RecentTrades coinId={params.id} />
-                      </div>
-                    </div>
-
-                    <div class="space-y-4">
-                      <Card>
-                        <div class="flex items-center justify-between mb-1">
-                          <h2 class="text-sm font-medium text-zinc-300">Market Stats</h2>
-                          <ConnectionIndicator state={store.connectionState()} onReconnect={store.reconnect} />
-                        </div>
-                        <p class="text-[10px] text-zinc-600 mb-4">Market cap and supply figures are estimates derived from trading volume.</p>
-                        <div class="grid grid-cols-2 gap-3">
-                          <StatCard label="Market Cap (Est.)" value={`$${compactNum(c().market_data.market_cap.usd)}`} />
-                          <StatCard label="Volume (24h)" value={`$${compactNum(volume())}`} live={isLive()} />
-                          <StatCard label="24h High" value={fmt(high())} live={isLive()} />
-                          <StatCard label="24h Low" value={fmt(low())} live={isLive()} />
-                          <StatCard label="24h Change" value={`${change() >= 0 ? '+' : ''}${change().toFixed(2)}%`} variant={change() >= 0 ? 'success' : 'danger'} live={isLive()} />
-                          <StatCard label="Circulating" value={c().market_data.circulating_supply > 0 ? compactNum(c().market_data.circulating_supply) : 'N/A'} />
-                          <StatCard label="Total Supply" value={supplyLabel()} />
-                        </div>
-                      </Card>
-
-                      <Card>
-                        <h2 class="text-sm font-medium text-zinc-300 mb-4">24h Price Range</h2>
-                        <div class="space-y-3">
-                          <div class="flex justify-between text-xs">
-                            <span class="text-zinc-500">{fmt(low())}</span>
-                            <span class="text-zinc-500">{fmt(high())}</span>
-                          </div>
-                          <div class="relative h-2 bg-zinc-800 rounded-full overflow-hidden">
-                            <div class="absolute h-full bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500 rounded-full w-full" />
-                            <div 
-                              class="absolute w-3 h-3 bg-white rounded-full top-1/2 shadow-lg border-2 border-zinc-900"
-                              style={{ left: `${high() > low() ? Math.min(100, Math.max(0, ((price() - low()) / (high() - low())) * 100)) : 50}%`, transform: 'translate(-50%, -50%)' }}
-                            />
-                          </div>
-                          <div class="text-center">
-                            <span class="text-xs text-zinc-400">Current: </span>
-                            <span class="text-xs font-mono text-white">{fmt(price())}</span>
-                          </div>
-                        </div>
-                      </Card>
-                    </div>
-                  </div>
-                )}
-              </Match>
-            </Switch>
-          </ErrorBoundary>
+    <div class="space-y-5">
+      <div class="flex items-center gap-3 border-b border-line pb-5">
+        <Skeleton class="h-11 w-11" />
+        <div class="space-y-2">
+          <Skeleton class="h-5 w-40" />
+          <Skeleton class="h-7 w-32" />
         </div>
-      </main>
+      </div>
+      <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Skeleton class="h-[420px] rounded-lg" />
+        <div class="space-y-4">
+          <Skeleton class="h-64 rounded-lg" />
+          <Skeleton class="h-40 rounded-lg" />
+        </div>
+      </div>
     </div>
   );
-};
+}
 
-export default CoinDetail;
+export default function CoinDetail() {
+  const params = useParams<{ id: string }>();
+  const market = useMarket();
+  const toast = useToast();
+
+  const coin = createMemo(() => market.coinById(params.id));
+  const fatalError = () => (coin() ? undefined : market.error());
+  const watched = () => market.isWatched(params.id);
+  const [copied, setCopied] = createSignal(false);
+  let copyTimer: number | undefined;
+
+  const stats = createMemo<{ label: string; value: string; tone?: string }[]>(() => {
+    const c = coin();
+    if (!c) return [];
+    return [
+      { label: 'Open', value: formatPrice(c.open) },
+      { label: 'High', value: formatPrice(c.high), tone: 'text-up' },
+      { label: 'Low', value: formatPrice(c.low), tone: 'text-down' },
+      { label: 'Volume', value: usdCompact(c.quoteVolume) },
+      { label: 'Base volume', value: `${compact(c.volume)} ${c.symbol}` },
+      { label: 'Trades', value: compact(c.trades) },
+      { label: 'Weighted avg', value: formatPrice(c.weightedAvg) },
+      { label: 'Rank', value: `#${c.rank}` },
+    ];
+  });
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      toast.show({ message: 'Link copied', tone: 'success' });
+      window.clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast.show({ message: 'Could not copy the link', tone: 'danger' });
+    }
+  };
+
+  createEffect(
+    on(coin, (c) => {
+      document.title = c
+        ? `${c.name} (${c.symbol}) — CryptoFlow`
+        : 'CryptoFlow — Live Market Terminal';
+    }),
+  );
+
+  onCleanup(() => {
+    window.clearTimeout(copyTimer);
+    document.title = 'CryptoFlow — Live Market Terminal';
+  });
+
+  return (
+    <div class="space-y-4">
+      <div class="flex items-center gap-1.5 text-[11px] text-dim">
+        <A href="/" class="transition-colors hover:text-fg">
+          Markets
+        </A>
+        <Icon name="chevronRight" size={10} />
+        <span class="text-muted">{coin()?.name ?? params.id.toUpperCase()}</span>
+      </div>
+
+      <Show when={market.ready()} fallback={<CoinSkeleton />}>
+        <Switch
+          fallback={
+            <Panel flush>
+              <Empty
+                title="Asset not tracked"
+                body="CryptoFlow tracks the top 100 USDT pairs by 24-hour volume. This asset is outside that set or does not exist."
+                action={
+                  <A href="/">
+                    <Button variant="secondary" size="sm">
+                      Back to markets
+                    </Button>
+                  </A>
+                }
+              />
+            </Panel>
+          }
+        >
+          <Match when={fatalError()}>
+            {(error) => (
+              <Panel flush>
+                <Empty
+                  icon="alert"
+                  iconClass="text-down"
+                  title="Market data unavailable"
+                  body={error().message}
+                  action={
+                    <Button variant="secondary" size="sm" onClick={market.refresh}>
+                      Try again
+                    </Button>
+                  }
+                />
+              </Panel>
+            )}
+          </Match>
+
+          <Match when={coin()}>
+            {(c) => (
+              <div class="space-y-5">
+                <header class="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="flex items-start gap-3">
+                    <CoinIcon symbol={c().symbol} size="xl" class="h-14 w-14" />
+                    <div>
+                      <div class="flex flex-wrap items-baseline gap-2">
+                        <h1 class="text-[20px] font-semibold tracking-tight text-fg">
+                          {c().name}
+                        </h1>
+                        <span class="font-mono text-[11px] text-dim">{c().symbol}</span>
+                        <span class="font-mono text-[11px] text-dim">#{c().rank}</span>
+                      </div>
+
+                      <div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                        <Price value={c().price} size="xl" />
+                        <span class="flex items-baseline gap-1.5">
+                          <Change value={c().change} size="lg" flash />
+                          <span class="text-[11px] text-dim">24h</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    <Button
+                      variant={watched() ? 'secondary' : 'primary'}
+                      size="sm"
+                      onClick={() => market.toggleWatch(params.id)}
+                      class={watched() ? 'text-fg' : ''}
+                    >
+                      <Icon name="star" size={12} fill={watched()} />
+                      {watched() ? 'Watching' : 'Watch'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={copyLink}
+                      title="Copy asset link"
+                      aria-label="Copy asset link"
+                    >
+                      <Icon name={copied() ? 'check' : 'link'} size={14} />
+                    </Button>
+                  </div>
+                </header>
+
+                <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                  <div class="min-w-0 space-y-4">
+                    <PriceChart symbol={c().symbol} live={c().price} />
+
+                    <div class="grid gap-4 md:grid-cols-2">
+                      <OrderBook symbol={c().symbol} />
+                      <RecentTrades symbol={c().symbol} />
+                    </div>
+                  </div>
+
+                  <aside class="space-y-4">
+                    <Panel>
+                      <div class="flex items-baseline justify-between">
+                        <h2 class="text-[13px] font-medium text-fg">Statistics</h2>
+                        <span class="text-[11px] text-dim">24h</span>
+                      </div>
+
+                      <dl class="mt-2">
+                        <Index each={stats()}>
+                          {(stat) => (
+                            <div class="flex items-center justify-between border-b border-line/60 py-2 last:border-0">
+                              <dt class="text-[12px] text-dim">{stat().label}</dt>
+                              <dd
+                                class={`font-mono text-[12px] tabular-nums ${stat().tone ?? 'text-fg'}`}
+                              >
+                                {stat().value}
+                              </dd>
+                            </div>
+                          )}
+                        </Index>
+                      </dl>
+                    </Panel>
+
+                    <Panel>
+                      <div class="flex items-baseline justify-between">
+                        <h2 class="text-[13px] font-medium text-fg">24h range</h2>
+                        <span class="text-[11px] text-dim">Low / High</span>
+                      </div>
+
+                      <RangeMeter
+                        position={rangePosition(c().price, c().low, c().high)}
+                        low={c().low}
+                        high={c().high}
+                        labels
+                        marker="fg"
+                        class="mt-4"
+                      />
+
+                      <div class="mt-4 flex items-center justify-between border-t border-line/70 pt-3">
+                        <span class="text-[12px] text-dim">Current</span>
+                        <span class="font-mono text-[12px] tabular-nums text-fg">
+                          {formatPrice(c().price)}
+                        </span>
+                      </div>
+                    </Panel>
+
+                    <Panel>
+                      <h2 class="text-[13px] font-medium text-fg">Market info</h2>
+                      <dl class="mt-3 space-y-2 text-[12px]">
+                        <div class="flex items-center justify-between">
+                          <dt class="text-dim">Pair</dt>
+                          <dd class="font-mono text-muted">{c().symbol}/USDT</dd>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <dt class="text-dim">Venue</dt>
+                          <dd class="text-muted">Binance spot</dd>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <dt class="text-dim">Last tick</dt>
+                          <dd class="font-mono text-muted">
+                            {market.lastTick() ? `${time(market.lastTick())} UTC` : '—'}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      <a
+                        href={`https://www.binance.com/en/trade/${c().symbol}_USDT`}
+                        target="_blank"
+                        rel="noreferrer"
+                        class="mt-4 flex items-center justify-between rounded-md border border-line px-3 py-2 text-[12px] text-muted transition-colors hover:border-[#35383d] hover:text-fg"
+                      >
+                        Open on Binance
+                        <Icon name="external" size={12} />
+                      </a>
+                    </Panel>
+                  </aside>
+                </div>
+              </div>
+            )}
+          </Match>
+        </Switch>
+      </Show>
+    </div>
+  );
+}
