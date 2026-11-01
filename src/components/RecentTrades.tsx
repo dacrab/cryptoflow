@@ -1,96 +1,115 @@
-import { Component, Show, For, createMemo, createResource, onCleanup } from 'solid-js';
-import { getRecentTrades, type Trade } from '../api';
-import { fmt } from '../utils';
-import { Card, Skeleton, LiveDot } from './ui';
+import { Component, Index, Match, Switch, createMemo } from 'solid-js';
+import { fetchTrades } from '../lib/api';
+import { createPolled } from '../lib/hooks';
+import { compact, price as formatPrice, qty as formatQty, time } from '../lib/format';
+import { Panel, RetryState, Skeleton, StatusPill } from './ui';
 
-const formatTime = (ts: number) =>
-  ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '--:--:--';
-
-const formatQty = (qty: number) => {
-  if (!qty || isNaN(qty)) return '0';
-  return qty >= 1 ? qty.toFixed(4) : qty >= 0.01 ? qty.toFixed(6) : qty.toFixed(8);
-};
-
-const RecentTrades: Component<{ coinId: string }> = (props) => {
-  const [trades, { refetch }] = createResource(() => props.coinId, (id) => getRecentTrades(id, 15));
-
-  const id = setInterval(() => {
-    if (document.visibilityState === 'visible') refetch();
-  }, 1_500);
-  const onVisibility = () => {
-    if (document.visibilityState === 'visible') refetch();
-  };
-  document.addEventListener('visibilitychange', onVisibility);
-  onCleanup(() => {
-    clearInterval(id);
-    document.removeEventListener('visibilitychange', onVisibility);
-  });
-
-  const hasData = () => (trades()?.length ?? 0) > 0;
+export const RecentTrades: Component<{ symbol: string }> = (props) => {
+  const { data, current, refresh } = createPolled(
+    () => props.symbol,
+    (symbol) => fetchTrades(symbol, 18),
+    1600,
+  );
+  const trades = () => (data.error ? undefined : current());
 
   const summary = createMemo(() => {
-    const t = trades();
-    if (!t?.length) return { buyCount: 0, sellCount: 0, buyVol: 0, sellVol: 0 };
-    let buyCount = 0, sellCount = 0, buyVol = 0, sellVol = 0;
-    for (const tr of t) {
-      if (tr.isBuy) { buyCount++; buyVol += tr.quoteQty; }
-      else          { sellCount++; sellVol += tr.quoteQty; }
+    const list = trades();
+    if (!list?.length) return { buys: 0, sells: 0, buyVolume: 0, sellVolume: 0 };
+
+    let buys = 0;
+    let sells = 0;
+    let buyVolume = 0;
+    let sellVolume = 0;
+
+    for (const trade of list) {
+      if (trade.side === 'buy') {
+        buys += 1;
+        buyVolume += trade.quote;
+      } else {
+        sells += 1;
+        sellVolume += trade.quote;
+      }
     }
-    return { buyCount, sellCount, buyVol, sellVol };
+
+    return { buys, sells, buyVolume, sellVolume };
   });
 
   return (
-    <Card>
-      <div class="flex items-center justify-between mb-3">
+    <Panel flush class="overflow-hidden">
+      <div class="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div class="flex items-center gap-2">
-          <h3 class="text-sm font-medium text-zinc-300">Recent Trades</h3>
-          <LiveDot show={hasData() && !trades.loading} />
+          <h2 class="text-[13px] font-medium text-fg">Recent trades</h2>
+          <StatusPill state={trades() ? 'live' : 'connecting'} compact />
         </div>
-        <span class="text-[10px] text-zinc-500">Live</span>
+        <span class="font-mono text-[10px] text-dim">{trades()?.length ?? 0} fills</span>
       </div>
 
-      <div class="grid grid-cols-[1fr_1fr_auto] gap-2 text-[10px] text-zinc-600 uppercase pb-2 border-b border-zinc-800/50">
-        <span>Price</span>
-        <span class="text-right">Amount</span>
-        <span class="text-right w-16">Time</span>
-      </div>
+      <div class="px-4 pb-4 pt-3">
+        <Switch
+          fallback={
+            <div class="space-y-1.5">
+              <Index each={Array.from({ length: 10 })}>
+                {() => (
+                  <div class="grid grid-cols-3 gap-2">
+                    <Skeleton class="h-3 w-16" />
+                    <Skeleton class="ml-auto h-3 w-12" />
+                    <Skeleton class="ml-auto h-3 w-10" />
+                  </div>
+                )}
+              </Index>
+            </div>
+          }
+        >
+          <Match when={data.error}>
+            <RetryState message="Trade feed unavailable." onRetry={refresh} />
+          </Match>
 
-      <Show when={trades.loading && !hasData()}>
-        <div class="space-y-1 mt-2">
-          <For each={Array(10).fill(0)}>{() => <Skeleton class="h-5 rounded" />}</For>
-        </div>
-      </Show>
+          <Match when={trades()}>
+            {(list) => (
+              <>
+                <div class="mb-1 grid grid-cols-[1.2fr_1fr_auto] gap-2 border-b border-line pb-1.5 pr-1 text-[10px] text-dim">
+                  <span>Price</span>
+                  <span class="text-right">Amount</span>
+                  <span class="w-14 text-right">UTC</span>
+                </div>
 
-      <Show when={!trades.loading && !hasData()}>
-        <div class="py-8 text-center text-zinc-500 text-sm">Trades unavailable</div>
-      </Show>
+                <div class="max-h-[286px] overflow-y-auto pr-1 no-scrollbar">
+                  <Index each={list()}>
+                    {(trade) => (
+                      <div class="grid grid-cols-[1.2fr_1fr_auto] items-center gap-2 py-[3px] font-mono text-[10px] tabular-nums">
+                        <span class={trade().side === 'buy' ? 'text-up' : 'text-down'}>
+                          {formatPrice(trade().price)}
+                        </span>
+                        <span class="text-right text-muted">{formatQty(trade().qty)}</span>
+                        <span class="w-14 text-right text-dim">{time(trade().time)}</span>
+                      </div>
+                    )}
+                  </Index>
+                </div>
 
-      <Show when={hasData()}>
-        <div class="divide-y divide-zinc-800/30 max-h-72 overflow-y-auto">
-          <For each={trades()}>
-            {(trade, i) => (
-              <div class={`grid grid-cols-[1fr_1fr_auto] gap-2 py-1.5 text-xs transition-colors ${i() === 0 ? 'bg-white/[0.02]' : ''}`}>
-                <span class={`font-mono ${trade.isBuy ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(trade.price)}</span>
-                <span class="font-mono text-zinc-400 text-right">{formatQty(trade.qty)}</span>
-                <span class="font-mono text-zinc-600 text-right w-16">{formatTime(trade.time)}</span>
-              </div>
+                <div class="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3">
+                  <div>
+                    <p class="text-[10px] text-dim">
+                      Buys <span class="text-up">{summary().buys}</span>
+                    </p>
+                    <p class="mt-0.5 font-mono text-[11px] text-up">
+                      ${compact(summary().buyVolume)}
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-[10px] text-dim">
+                      Sells <span class="text-down">{summary().sells}</span>
+                    </p>
+                    <p class="mt-0.5 font-mono text-[11px] text-down">
+                      ${compact(summary().sellVolume)}
+                    </p>
+                  </div>
+                </div>
+              </>
             )}
-          </For>
-        </div>
-
-        <div class="mt-3 pt-3 border-t border-zinc-800/50 grid grid-cols-2 gap-2 text-[10px]">
-          <div>
-            <div class="text-zinc-500 mb-0.5">Buys ({summary().buyCount})</div>
-            <div class="text-emerald-400 font-mono">{fmt(summary().buyVol)}</div>
-          </div>
-          <div class="text-right">
-            <div class="text-zinc-500 mb-0.5">Sells ({summary().sellCount})</div>
-            <div class="text-red-400 font-mono">{fmt(summary().sellVol)}</div>
-          </div>
-        </div>
-      </Show>
-    </Card>
+          </Match>
+        </Switch>
+      </div>
+    </Panel>
   );
 };
-
-export default RecentTrades;

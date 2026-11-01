@@ -1,21 +1,39 @@
-import { Component } from 'solid-js';
-import { A } from '@solidjs/router';
-import { Button } from '../components/ui';
+import { A, useLocation, useNavigate } from '@solidjs/router';
+import { Button, Kbd } from '../components/ui';
+import { Icon } from '../components/Icon';
 
-const NotFound: Component = () => (
-  <div class="min-h-screen bg-[#09090b] flex items-center justify-center p-4">
-    <div class="text-center max-w-md">
-      <div class="text-8xl font-bold text-zinc-800 mb-4">404</div>
-      <h1 class="text-2xl font-semibold text-white mb-2">Page Not Found</h1>
-      <p class="text-zinc-500 mb-8">
-        The page you're looking for doesn't exist or has been moved.
-      </p>
-      <div class="flex gap-3 justify-center">
-        <A href="/"><Button variant="primary">Back to Dashboard</Button></A>
-        <Button variant="ghost" onClick={() => window.history.back()}>Go Back</Button>
+export default function NotFound() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  return (
+    <div class="flex min-h-[55vh] items-center justify-center py-12">
+      <div class="w-full max-w-md text-center">
+        <p class="font-mono text-[11px] text-dim">404</p>
+        <h1 class="mt-2 text-[20px] font-semibold tracking-tight text-fg">Page not found</h1>
+        <p class="mt-2 text-[13px] leading-relaxed text-muted">
+          <code class="rounded border border-line bg-panel px-1.5 py-0.5 font-mono text-[11px] text-fg">
+            {location.pathname}
+          </code>{' '}
+          is not part of this app.
+        </p>
+
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <A href="/">
+            <Button variant="primary" size="sm">
+              Back to markets
+            </Button>
+          </A>
+          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+            Go back
+          </Button>
+        </div>
+
+        <p class="mt-6 flex items-center justify-center gap-1.5 text-[11px] text-dim">
+          <Kbd>⌘K</Kbd> jump to an asset
+          <Icon name="chevronRight" size={10} />
+        </p>
       </div>
     </div>
-  </div>
-);
-
-export default NotFound;
+  );
+}

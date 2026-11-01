@@ -1,110 +1,137 @@
-import { Component, Show, For, createMemo, createResource, onCleanup } from 'solid-js';
-import { getOrderBook, type OrderBookData } from '../api';
-import { fmt } from '../utils';
-import { Card, Skeleton, LiveDot } from './ui';
+import { Component, Index, Match, Show, Switch, createMemo } from 'solid-js';
+import { fetchDepth } from '../lib/api';
+import { createPolled } from '../lib/hooks';
+import { price as formatPrice, qty as formatQty } from '../lib/format';
+import { Panel, RetryState, Skeleton, StatusPill } from './ui';
+import type { Level } from '../lib/types';
 
-const OrderRow: Component<{ item: [string, string]; maxQty: number; side: 'bid' | 'ask' }> = (props) => {
-  const pct = () => (parseFloat(props.item[1]) / props.maxQty) * 100;
-  const isBid = props.side === 'bid';
+function DepthRow(props: { level: Level; side: 'bid' | 'ask'; max: number }) {
+  const width = () => Math.min(100, (props.level.total / props.max) * 100);
+
   return (
-    <div class="relative flex items-center justify-between text-xs py-0.5 px-1 rounded">
-      <div class={`absolute inset-0 rounded transition-all ${isBid ? 'bg-emerald-500/10' : 'bg-red-500/10'}`} style={{ width: `${pct()}%` }} />
-      <span class={`relative font-mono ${isBid ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(parseFloat(props.item[0]))}</span>
-      <span class="relative text-zinc-500 font-mono">{parseFloat(props.item[1]).toFixed(4)}</span>
+    <div class="relative grid grid-cols-[1.2fr_1fr_1fr] items-center py-[3px] font-mono text-[10px] tabular-nums">
+      <div
+        classList={{
+          'absolute inset-y-0 right-0 bg-up/[0.07]': props.side === 'bid',
+          'absolute inset-y-0 right-0 bg-down/[0.07]': props.side === 'ask',
+        }}
+        style={{ width: `${width()}%` }}
+      />
+      <span class={`relative ${props.side === 'bid' ? 'text-up' : 'text-down'}`}>
+        {formatPrice(props.level.price)}
+      </span>
+      <span class="relative text-right text-muted">{formatQty(props.level.qty)}</span>
+      <span class="relative text-right text-dim">{formatQty(props.level.total)}</span>
     </div>
   );
-};
+}
 
-const OrderBook: Component<{ coinId: string }> = (props) => {
-  const [data, { refetch }] = createResource(() => props.coinId, (id) => getOrderBook(id, 8));
+export const OrderBook: Component<{ symbol: string }> = (props) => {
+  const { data, current, refresh } = createPolled(
+    () => props.symbol,
+    (symbol) => fetchDepth(symbol, 10),
+    2500,
+  );
+  const book = () => (data.error ? undefined : current());
 
-  const id = setInterval(() => {
-    if (document.visibilityState === 'visible') refetch();
-  }, 2_000);
-  const onVisibility = () => {
-    if (document.visibilityState === 'visible') refetch();
-  };
-  document.addEventListener('visibilitychange', onVisibility);
-  onCleanup(() => {
-    clearInterval(id);
-    document.removeEventListener('visibilitychange', onVisibility);
+  const maxTotal = createMemo(() => {
+    const depth = book();
+    if (!depth) return 1;
+    return Math.max(depth.bidTotal, depth.askTotal, 1);
   });
 
-  const hasData = () => !!data()?.bids?.length && !!data()?.asks?.length;
-
-  const maxQty = createMemo(() => {
-    const d = data();
-    if (!d) return 1;
-    let max = 1;
-    for (const [, q] of [...d.bids, ...d.asks]) { const n = parseFloat(q); if (n > max) max = n; }
-    return max;
+  const pressure = createMemo(() => {
+    const depth = book();
+    if (!depth || depth.bidTotal + depth.askTotal === 0) return 50;
+    return (depth.bidTotal / (depth.bidTotal + depth.askTotal)) * 100;
   });
 
-  const buyPressure = createMemo(() => {
-    const d = data();
-    if (!d || d.bidTotal + d.askTotal === 0) return 50;
-    return (d.bidTotal / (d.bidTotal + d.askTotal)) * 100;
+  const mid = createMemo(() => {
+    const depth = book();
+    if (!depth || !depth.bids[0] || !depth.asks[0]) return 0;
+    return (depth.bids[0].price + depth.asks[0].price) / 2;
   });
 
   return (
-    <Card>
-      <div class="flex items-center justify-between mb-3">
+    <Panel flush class="overflow-hidden">
+      <div class="flex items-center justify-between border-b border-line px-4 py-2.5">
         <div class="flex items-center gap-2">
-          <h3 class="text-sm font-medium text-zinc-300">Order Book</h3>
-          <LiveDot show={hasData() && !data.loading} />
+          <h2 class="text-[13px] font-medium text-fg">Order book</h2>
+          <StatusPill state={book() ? 'live' : 'connecting'} compact />
         </div>
-        <Show when={hasData()}>
-          <span class="text-[10px] text-zinc-500">
-            Spread: {fmt(data()!.spread)} ({data()!.spreadPercent.toFixed(3)}%)
-          </span>
+        <Show when={book()}>
+          {(depth) => (
+            <span class="font-mono text-[10px] tabular-nums text-dim">
+              {formatPrice(depth().spread)} · {depth().spreadPct.toFixed(3)}%
+            </span>
+          )}
         </Show>
       </div>
 
-      <Show when={data.loading && !hasData()}>
-        <div class="space-y-1">
-          <For each={Array(8).fill(0)}>{() => <Skeleton class="h-5 rounded" />}</For>
-        </div>
-      </Show>
+      <div class="px-4 pb-4 pt-3">
+        <Switch
+          fallback={
+            <div class="space-y-1.5">
+              <Index each={Array.from({ length: 10 })}>
+                {() => (
+                  <div class="grid grid-cols-3 gap-2">
+                    <Skeleton class="h-3 w-16" />
+                    <Skeleton class="ml-auto h-3 w-12" />
+                    <Skeleton class="ml-auto h-3 w-12" />
+                  </div>
+                )}
+              </Index>
+            </div>
+          }
+        >
+          <Match when={data.error}>
+            <RetryState message="Order book unavailable." onRetry={refresh} />
+          </Match>
 
-      <Show when={!data.loading && !hasData()}>
-        <div class="py-8 text-center text-zinc-500 text-sm">Order book unavailable</div>
-      </Show>
+          <Match when={book()}>
+            {(depth) => (
+              <>
+                <div class="mb-1 grid grid-cols-[1.2fr_1fr_1fr] border-b border-line pb-1.5 text-[10px] text-dim">
+                  <span>Price</span>
+                  <span class="text-right">Amount</span>
+                  <span class="text-right">Total</span>
+                </div>
 
-      <Show when={hasData()}>
-        <div class="space-y-0.5 mb-2">
-          <For each={[...(data()!.asks)].reverse()}>
-            {(item) => <OrderRow item={item} maxQty={maxQty()} side="ask" />}
-          </For>
-        </div>
+                <Index each={[...depth().asks].slice().reverse()}>
+                  {(level) => <DepthRow level={level()} side="ask" max={maxTotal()} />}
+                </Index>
 
-        <div class="flex items-center justify-center gap-2 py-1.5 border-y border-zinc-800/50 my-2">
-          <span class="text-xs font-mono text-red-400">{fmt(parseFloat(data()!.asks[0][0]))}</span>
-          <span class="text-[10px] text-zinc-600">↕</span>
-          <span class="text-xs font-mono text-emerald-400">{fmt(parseFloat(data()!.bids[0][0]))}</span>
-        </div>
+                <div class="my-2 flex items-center justify-between border-y border-line py-1.5 font-mono text-[10px] tabular-nums">
+                  <span class="text-dim">Mid</span>
+                  <span class="text-fg">{formatPrice(mid())}</span>
+                  <span class="text-dim">{pressure() >= 50 ? 'bid heavy' : 'ask heavy'}</span>
+                </div>
 
-        <div class="space-y-0.5 mt-2">
-          <For each={data()!.bids}>
-            {(item) => <OrderRow item={item} maxQty={maxQty()} side="bid" />}
-          </For>
-        </div>
+                <Index each={depth().bids}>
+                  {(level) => <DepthRow level={level()} side="bid" max={maxTotal()} />}
+                </Index>
 
-        <div class="mt-4 pt-3 border-t border-zinc-800/50">
-          <div class="flex items-center justify-between text-[10px] text-zinc-500 mb-1">
-            <span>Buyers</span><span>Sellers</span>
-          </div>
-          <div class="h-2 bg-zinc-800 rounded-full overflow-hidden flex">
-            <div class="bg-emerald-500/70 h-full transition-all duration-500" style={{ width: `${buyPressure()}%` }} />
-            <div class="bg-red-500/70 h-full transition-all duration-500" style={{ width: `${100 - buyPressure()}%` }} />
-          </div>
-          <div class="flex items-center justify-between text-[10px] mt-1">
-            <span class="text-emerald-400 font-mono">{buyPressure().toFixed(1)}%</span>
-            <span class="text-red-400 font-mono">{(100 - buyPressure()).toFixed(1)}%</span>
-          </div>
-        </div>
-      </Show>
-    </Card>
+                <div class="mt-4 border-t border-line pt-3">
+                  <div class="mb-1.5 flex items-center justify-between font-mono text-[10px] tabular-nums">
+                    <span class="text-up">Bids {pressure().toFixed(1)}%</span>
+                    <span class="text-down">Asks {(100 - pressure()).toFixed(1)}%</span>
+                  </div>
+                  <div class="flex h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                    <div
+                      class="h-full bg-up/70 transition-[width] duration-500"
+                      style={{ width: `${pressure()}%` }}
+                    />
+                    <div
+                      class="h-full bg-down/60 transition-[width] duration-500"
+                      style={{ width: `${100 - pressure()}%` }}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </Match>
+        </Switch>
+      </div>
+    </Panel>
   );
 };
-
-export default OrderBook;

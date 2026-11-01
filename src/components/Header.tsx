@@ -1,72 +1,122 @@
-import { Component, Show, createSignal } from 'solid-js';
+import { Show } from 'solid-js';
 import { A, useLocation } from '@solidjs/router';
-import { useStore } from '../store';
-import { Button, Input } from './ui';
+import { useMarket } from '../lib/market';
+import { createNow } from '../lib/hooks';
+import { time } from '../lib/format';
+import { Button, Kbd, StatusPill } from './ui';
+import { Icon } from './Icon';
 
-const Header: Component = () => {
-  const store = useStore();
+function Wordmark() {
+  return (
+    <A href="/" class="flex shrink-0 items-center gap-2" aria-label="CryptoFlow home">
+      <svg viewBox="0 0 24 24" class="h-4 w-4 text-fg" aria-hidden="true">
+        <path
+          d="M5 19V9M12 19V5M19 19v-7"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+        />
+      </svg>
+      <span class="text-[13px] font-semibold tracking-tight text-fg">CryptoFlow</span>
+    </A>
+  );
+}
+
+export function Header(props: { onOpenPalette: () => void }) {
+  const market = useMarket();
   const location = useLocation();
-  const isHome = () => location.pathname === '/';
-  const [showSearch, setShowSearch] = createSignal(false);
+  const now = createNow(1000);
 
   return (
-    <header class="sticky top-0 z-20 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5">
-      <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="h-14 flex items-center justify-between gap-4">
-          <Show when={isHome()} fallback={
-            <A href="/" class="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group">
-              <svg class="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-              <span class="text-sm">Back</span>
-            </A>
-          }>
-            <A href="/" class="flex items-center gap-2 group">
-              <svg class="w-7 h-7" viewBox="0 0 32 32" fill="none">
-                <rect x="2" y="2" width="28" height="28" rx="8" fill="#18181b" stroke="#27272a" stroke-width="1"/>
-                <path d="M10 20L14 12L18 17L22 10" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="22" cy="10" r="2" fill="#10b981"/>
-              </svg>
-              <span class="font-semibold text-white/90 group-hover:text-white transition-colors">CryptoFlow</span>
-            </A>
-          </Show>
+    <header class="sticky top-0 z-40 border-b border-line bg-ink">
+      <div class="mx-auto flex h-14 w-full max-w-[1440px] items-center gap-6 px-4 sm:px-6">
+        <Wordmark />
 
-          <Show when={isHome()}>
-            <div class="hidden sm:block flex-1 max-w-sm mx-4">
-              <Input value={store.state.search} onInput={store.setSearch} onClear={store.clearSearch} placeholder="Search coins..." />
-            </div>
-          </Show>
-
-          <div class="flex items-center gap-1">
-            <Show when={isHome()}>
-              <Button variant="ghost" size="sm" class="sm:hidden" onClick={() => setShowSearch(!showSearch())}>
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </Button>
-              <Button variant={store.state.watchlistOnly ? 'secondary' : 'ghost'} size="sm" onClick={store.toggleWatchlistOnly} title="Watchlist">
-                <svg class={`w-4 h-4 ${store.state.watchlistOnly ? 'text-amber-400' : ''}`} fill={store.state.watchlistOnly ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-                </svg>
-                <span class="hidden sm:inline">Watchlist</span>
-              </Button>
-              <Button variant="ghost" size="sm" onClick={store.refetch} disabled={store.loading()} title="Refresh">
-                <svg class={`w-4 h-4 ${store.loading() ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </Button>
+        <nav class="hidden items-center gap-5 sm:flex" aria-label="Main">
+          <A
+            href="/"
+            end
+            class="text-[13px] transition-colors"
+            activeClass="text-fg"
+            inactiveClass="text-muted hover:text-fg"
+          >
+            Markets
+          </A>
+          <A
+            href="/watchlist"
+            class="flex items-center gap-1.5 text-[13px] transition-colors"
+            activeClass="text-fg"
+            inactiveClass="text-muted hover:text-fg"
+          >
+            Watchlist
+            <Show when={market.watchlist().length}>
+              {(count) => <span class="font-mono text-[11px] text-dim">{count()}</span>}
             </Show>
+          </A>
+        </nav>
+
+        <div class="ml-auto flex items-center gap-2 sm:gap-3">
+          <div class="hidden items-center gap-3 md:flex">
+            <StatusPill state={market.connection()} onRetry={market.reconnect} />
+            <span class="font-mono text-[11px] tabular-nums text-dim" title="Coordinated Universal Time">
+              {time(now())} <span class="text-dim/70">UTC</span>
+            </span>
+          </div>
+
+          <span class="md:hidden">
+            <StatusPill state={market.connection()} compact onRetry={market.reconnect} />
+          </span>
+
+          <button
+            type="button"
+            onClick={props.onOpenPalette}
+            class="inline-flex h-8 items-center gap-2 rounded-md border border-line bg-panel pl-2.5 pr-2 text-[12px] text-muted transition-colors hover:border-[#35383d] hover:text-fg"
+            aria-label="Search markets"
+          >
+            <Icon name="search" size={13} />
+            <span class="hidden sm:inline">Search</span>
+            <span class="hidden sm:inline-flex"><Kbd>⌘K</Kbd></span>
+          </button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={market.refresh}
+            title="Refresh market snapshot"
+            aria-label="Refresh market snapshot"
+          >
+            <Icon name="refresh" size={14} class={market.refreshing() ? 'animate-spin' : ''} />
+          </Button>
+        </div>
+      </div>
+
+      <Show when={location.pathname === '/' || location.pathname.startsWith('/watchlist')}>
+        <div class="border-t border-line sm:hidden">
+          <div class="mx-auto flex w-full max-w-[1440px] items-center gap-5 px-4 py-2">
+            <A
+              href="/"
+              end
+              class="text-[12px] transition-colors"
+              activeClass="text-fg"
+              inactiveClass="text-muted"
+            >
+              Markets
+            </A>
+            <A
+              href="/watchlist"
+              class="flex items-center gap-1.5 text-[12px] transition-colors"
+              activeClass="text-fg"
+              inactiveClass="text-muted"
+            >
+              Watchlist
+              <span class="font-mono text-[11px] text-dim">{market.watchlist().length}</span>
+            </A>
+            <span class="ml-auto font-mono text-[11px] tabular-nums text-dim">
+              {time(now())} UTC
+            </span>
           </div>
         </div>
-
-        <Show when={isHome() && showSearch()}>
-          <div class="pb-3 sm:hidden">
-            <Input value={store.state.search} onInput={store.setSearch} onClear={() => { store.clearSearch(); setShowSearch(false); }} placeholder="Search..." autofocus />
-          </div>
-        </Show>
-      </div>
+      </Show>
     </header>
   );
-};
-
-export default Header;
+}

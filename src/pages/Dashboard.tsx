@@ -1,136 +1,343 @@
-import { Component, Show, Index, onMount, onCleanup, createMemo, batch } from 'solid-js';
-import { A } from '@solidjs/router';
-import { useStore } from '../store';
-import type { Coin } from '../types';
-import { compactNum } from '../utils';
-import Header from '../components/Header';
-import CoinList from '../components/CoinList';
-import { ErrorBoundary } from '../components/ErrorBoundary';
-import { Card, StatCard, Price, CoinAvatar } from '../components/ui';
+import {
+  For,
+  JSX,
+  Match,
+  Show,
+  Switch,
+  createDeferred,
+  createMemo,
+  onCleanup,
+  onMount,
+} from 'solid-js';
+import { useSearchParams } from '@solidjs/router';
+import { useMarket } from '../lib/market';
+import { time, usdCompact } from '../lib/format';
+import type { Direction, SortKey } from '../lib/types';
+import { Button, Empty, Kbd, Panel, Segmented } from '../components/ui';
+import { Icon } from '../components/Icon';
+import { CoinTable } from '../components/CoinTable';
+import { CoinGrid } from '../components/CoinGrid';
 
-const MiniRow: Component<{ coin: Coin }> = (p) => (
-  <A href={`/coin/${p.coin.id}`} class="flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
-    <CoinAvatar src={p.coin.image} symbol={p.coin.symbol} size="sm" />
-    <span class="flex-1 text-sm font-medium truncate">{p.coin.symbol.toUpperCase()}</span>
-    <Price price={p.coin.current_price} change={p.coin.price_change_percentage_24h} size="sm" />
-  </A>
-);
+const SORT_KEYS = ['rank', 'name', 'price', 'change', 'volume'] as const;
 
-const Dashboard: Component = () => {
-  const store = useStore();
+const VIEW_OPTIONS = [
+  { value: 'table', label: 'Table', icon: 'rows' },
+  { value: 'grid', label: 'Grid', icon: 'grid' },
+] as const;
+
+const MOBILE_SORTS: { value: SortKey; label: string }[] = [
+  { value: 'rank', label: 'Rank' },
+  { value: 'price', label: 'Price' },
+  { value: 'change', label: '24h' },
+  { value: 'volume', label: 'Volume' },
+];
+
+interface MarketParams {
+  [key: string]: string | string[] | undefined;
+  q?: string;
+  sort?: string;
+  dir?: string;
+  view?: string;
+  watch?: string;
+}
+
+function Overview() {
+  const market = useMarket();
+  const stats = () => market.stats();
+
+  return (
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 class="text-[20px] font-semibold tracking-tight text-fg">Markets</h1>
+        <p class="mt-1 text-[13px] text-muted">
+          Top 100 USDT pairs by 24-hour volume on Binance.
+        </p>
+
+        <p class="mt-2 flex flex-wrap items-center gap-x-2 font-mono text-[11px] tabular-nums text-dim">
+          <Show when={market.ready()} fallback={<span>Loading snapshot…</span>}>
+            <span>{stats().total} pairs</span>
+            <span>·</span>
+            <span>{usdCompact(stats().volume)} volume</span>
+            <span>·</span>
+            <span class="text-up">{stats().gainers} up</span>
+            <span class="text-down">{stats().losers} down</span>
+            <span class="hidden sm:inline">·</span>
+            <span class="hidden sm:inline">
+              {market.lastTick() ? `updated ${time(market.lastTick())} UTC` : 'waiting for data'}
+            </span>
+          </Show>
+        </p>
+      </div>
+    </header>
+  );
+}
+
+export default function Dashboard() {
+  const market = useMarket();
+  const [params, setParams] = useSearchParams<MarketParams>();
+  let searchInput: HTMLInputElement | undefined;
+
+  const queryText = () => params.q ?? '';
+  const deferredQuery = createDeferred(queryText, { timeoutMs: 140 });
+
+  const sort = (): SortKey => {
+    const value = params.sort as SortKey | undefined;
+    return value && SORT_KEYS.includes(value) ? value : 'rank';
+  };
+
+  const direction = (): Direction => {
+    if (params.dir === 'asc' || params.dir === 'desc') return params.dir;
+    return sort() === 'rank' || sort() === 'name' ? 'asc' : 'desc';
+  };
+
+  const view = (): 'table' | 'grid' => (params.view === 'grid' ? 'grid' : 'table');
+  const watchOnly = () => params.watch === '1';
+
+  const filtered = createMemo(() => {
+    const term = deferredQuery().trim().toLowerCase();
+    const watchedOnly = watchOnly();
+
+    return market.coins().filter((coin) => {
+      if (watchedOnly && !market.isWatched(coin.id)) return false;
+      if (!term) return true;
+      return (
+        coin.name.toLowerCase().includes(term) || coin.symbol.toLowerCase().includes(term)
+      );
+    });
+  });
+
+  const sorted = createMemo(() => {
+    const key = sort();
+    const multiplier = direction() === 'asc' ? 1 : -1;
+    const list = filtered();
+
+    return [...list].sort((a, b) => {
+      if (key === 'name') return a.symbol.localeCompare(b.symbol) * multiplier;
+      if (key === 'rank') return (a.rank - b.rank) * multiplier;
+      if (key === 'price') return (a.price - b.price) * multiplier;
+      if (key === 'change') return (a.change - b.change) * multiplier;
+      return (a.quoteVolume - b.quoteVolume) * multiplier;
+    });
+  });
+
+  const update = (patch: Partial<MarketParams>, replace = false) => {
+    setParams(patch, { replace, scroll: false });
+  };
+
+  const toggleSort = (field: SortKey) => {
+    if (sort() === field) {
+      update({ dir: direction() === 'desc' ? 'asc' : 'desc' }, true);
+    } else {
+      update({
+        sort: field,
+        dir: field === 'rank' || field === 'name' ? 'asc' : 'desc',
+      });
+    }
+  };
+
+  const clearFilters = () => {
+    update({ q: undefined, watch: undefined, sort: undefined, dir: undefined });
+  };
+
+  const emptyState = (): JSX.Element => (
+    <Switch
+      fallback={
+        <Empty icon="spark" title="No markets available" body="The market snapshot is empty." />
+      }
+    >
+      <Match when={watchOnly()}>
+        <Empty
+          icon="star"
+          title="Your watchlist is empty"
+          body="Star a market to keep it here."
+          action={
+            <Button variant="secondary" size="sm" onClick={() => update({ watch: undefined }, true)}>
+              Browse all markets
+            </Button>
+          }
+        />
+      </Match>
+
+      <Match when={queryText()}>
+        {(term) => (
+          <Empty
+            icon="search"
+            title="No markets match"
+            body={`Nothing in the top 100 tracks “${term()}”.`}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => update({ q: undefined }, true)}>
+                Clear search
+              </Button>
+            }
+          />
+        )}
+      </Match>
+    </Switch>
+  );
 
   onMount(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
-      if (e.key === '/') { e.preventDefault(); document.querySelector<HTMLInputElement>('input')?.focus(); }
-      if (e.key === 'r') store.refetch();
-      if (e.key === 'w') store.toggleWatchlistOnly();
-      if (e.key === 'Escape') store.clearSearch();
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (target?.closest('[role="dialog"]')) return;
+
+      if (event.key === 'Escape') {
+        if (queryText() || watchOnly()) {
+          clearFilters();
+          if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') target.blur();
+        }
+        return;
+      }
+
+      const editing =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (editing) return;
+
+      if (event.key === '/') {
+        event.preventDefault();
+        searchInput?.focus();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    const interval = setInterval(store.refetch, 5 * 60_000);
-    onCleanup(() => { window.removeEventListener('keydown', onKey); clearInterval(interval); });
-  });
 
-  const isLive = () => store.connectionState() === 'connected';
-
-  const topMovers = createMemo(() => {
-    const coins = store.coins();
-    if (!coins.length) return { up: [], down: [] };
-    const sorted = [...coins].sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
-    return { up: sorted.slice(0, 5), down: sorted.slice(-5).reverse() };
-  });
-
-  const marketStats = createMemo(() => {
-    const coins = store.coins();
-    let mcap = 0, vol = 0;
-    for (const c of coins) { mcap += c.market_cap; vol += c.total_volume; }
-    return { mcap, vol, up: store.stats().gainers, down: store.stats().losers };
+    window.addEventListener('keydown', onKeyDown);
+    onCleanup(() => window.removeEventListener('keydown', onKeyDown));
   });
 
   return (
-    <div class="min-h-screen bg-[#09090b]">
-      <Header />
-      <main class="py-6">
-        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-          <ErrorBoundary>
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-              <StatCard label="Market Cap" value={`$${compactNum(marketStats().mcap)}`} live={isLive()} />
-              <StatCard label="24h Volume" value={`$${compactNum(marketStats().vol)}`} live={isLive()} />
-              <StatCard label="Gainers" value={marketStats().up} variant="success" live={isLive()} />
-              <StatCard label="Losers" value={marketStats().down} variant="danger" live={isLive()} />
-            </div>
+    <div class="space-y-3">
+      <Overview />
 
-            <div class="grid lg:grid-cols-[260px_1fr_300px] gap-6">
-              <aside class="hidden lg:block space-y-4">
-                <Card padding="none">
-                  <div class="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                    <span class="text-xs font-medium text-zinc-400">Top Gainers</span>
-                  </div>
-                  <Index each={topMovers().up}>{(coin) => <MiniRow coin={coin()} />}</Index>
-                </Card>
-                <Card padding="none">
-                  <div class="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-                    <div class="w-1.5 h-1.5 rounded-full bg-red-500" />
-                    <span class="text-xs font-medium text-zinc-400">Top Losers</span>
-                  </div>
-                  <Index each={topMovers().down}>{(coin) => <MiniRow coin={coin()} />}</Index>
-                </Card>
-              </aside>
-
-              <section class="min-w-0">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="flex items-center gap-3">
-                    <h2 class="text-sm font-medium text-zinc-300">
-                      {store.state.watchlistOnly ? 'Watchlist' : store.state.search ? 'Results' : 'All Coins'}
-                    </h2>
-                    <Show when={!store.loading()}><span class="text-xs text-zinc-600">{store.stats().filtered}</span></Show>
-                  </div>
-                  <Show when={store.state.search || store.state.watchlistOnly}>
-                    <button onClick={() => batch(() => { store.clearSearch(); if (store.state.watchlistOnly) store.toggleWatchlistOnly(); })} class="text-xs text-zinc-500 hover:text-white transition-colors">Clear</button>
-                  </Show>
-                </div>
-                <CoinList
-                  coins={store.sorted()}
-                  loading={store.loading()}
-                  error={store.error() ?? null}
-                  sortField={store.state.sort.field}
-                  sortDir={store.state.sort.direction}
-                  onSort={store.setSort}
-                  isWatched={store.isWatched}
-                  onWatch={store.toggleWatch}
-                  emptyMsg={store.state.search ? `No results for "${store.state.search}"` : 'No coins'}
-                  connectionState={store.connectionState()}
-                  onReconnect={store.reconnect}
-                />
-              </section>
-
-              <aside class="hidden lg:block space-y-4">
-                <Show when={store.watched().length > 0}>
-                  <Card padding="none">
-                    <div class="px-4 py-3 border-b border-zinc-800/50 flex items-center gap-2">
-                      <svg class="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 24 24"><path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>
-                      <span class="text-xs font-medium text-zinc-400">Watchlist</span>
-                      <span class="text-xs text-zinc-600 ml-auto">{store.watched().length}</span>
-                    </div>
-                    <div class="max-h-64 overflow-y-auto">
-                      <Index each={store.watched()}>{(coin) => <MiniRow coin={coin()} />}</Index>
-                    </div>
-                  </Card>
-                </Show>
-                <div class="text-[10px] text-zinc-600 space-y-1 px-1">
-                  <div class="flex gap-2"><kbd class="px-1 bg-zinc-800 rounded">/</kbd> Search</div>
-                  <div class="flex gap-2"><kbd class="px-1 bg-zinc-800 rounded">W</kbd> Watchlist</div>
-                  <div class="flex gap-2"><kbd class="px-1 bg-zinc-800 rounded">R</kbd> Refresh</div>
-                </div>
-              </aside>
-            </div>
-          </ErrorBoundary>
+      <div class="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
+        <div class="relative w-full sm:max-w-[300px]">
+          <Icon
+            name="search"
+            size={14}
+            class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-dim"
+          />
+          <input
+            id="market-search"
+            ref={(el) => (searchInput = el)}
+            type="text"
+            value={queryText()}
+            onInput={(event) => update({ q: event.currentTarget.value || undefined }, true)}
+            placeholder="Search markets"
+            autocomplete="off"
+            spellcheck={false}
+            class="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-12 text-[12px] text-fg outline-none transition-colors placeholder:text-dim focus:border-[#3c4046]"
+          />
+          <div class="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center">
+            <Show when={queryText()} fallback={<Kbd>/</Kbd>}>
+              <button
+                type="button"
+                onClick={() => update({ q: undefined }, true)}
+                class="flex h-5 w-5 items-center justify-center rounded text-dim transition-colors hover:bg-white/[0.06] hover:text-fg"
+                aria-label="Clear search"
+              >
+                <Icon name="x" size={11} />
+              </button>
+            </Show>
+          </div>
         </div>
-      </main>
+
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <button
+            type="button"
+            onClick={() => update({ watch: watchOnly() ? undefined : '1' }, true)}
+            aria-pressed={watchOnly()}
+            classList={{
+              'border-line bg-[#1c1e22] text-fg': watchOnly(),
+              'border-line bg-panel text-muted hover:text-fg': !watchOnly(),
+            }}
+            class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] transition-colors"
+          >
+            <Icon name="star" size={12} fill={watchOnly()} />
+            Watchlist
+          </button>
+
+          <Segmented
+            value={view()}
+            options={VIEW_OPTIONS}
+            onChange={(value) => update({ view: value === 'table' ? undefined : value }, true)}
+            class="shrink-0"
+          />
+
+          <Show when={queryText() || watchOnly() || sort() !== 'rank'}>
+            <Button variant="ghost" size="sm" onClick={clearFilters} class="shrink-0">
+              Clear
+            </Button>
+          </Show>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-1 sm:hidden">
+        <div class="flex items-center gap-3 overflow-x-auto no-scrollbar">
+          <For each={MOBILE_SORTS}>
+            {(item) => (
+              <button
+                type="button"
+                onClick={() => toggleSort(item.value)}
+                classList={{
+                  'text-fg': sort() === item.value,
+                  'text-dim': sort() !== item.value,
+                }}
+                class="inline-flex shrink-0 items-center gap-1 text-[12px] transition-colors hover:text-fg"
+              >
+                {item.label}
+                <Show when={sort() === item.value}>
+                  <Icon name={direction() === 'asc' ? 'arrowUp' : 'arrowDown'} size={10} />
+                </Show>
+              </button>
+            )}
+          </For>
+        </div>
+        <span class="shrink-0 font-mono text-[11px] text-dim">{sorted().length}</span>
+      </div>
+
+      <Show
+        when={!market.error() || market.coins().length}
+        fallback={
+          <Panel flush>
+            <Empty
+              icon="alert"
+              iconClass="text-down"
+              title="Market data unavailable"
+              body={market.error()?.message}
+              action={
+                <Button variant="secondary" size="sm" onClick={market.refresh}>
+                  Try again
+                </Button>
+              }
+            />
+          </Panel>
+        }
+      >
+        <div class="pt-1">
+          <Show
+            when={view() === 'table'}
+            fallback={
+              <CoinGrid
+                coins={sorted()}
+                loading={market.loading()}
+                isWatched={market.isWatched}
+                onWatch={market.toggleWatch}
+                empty={emptyState()}
+              />
+            }
+          >
+            <CoinTable
+              coins={sorted()}
+              loading={market.loading()}
+              sort={sort()}
+              direction={direction()}
+              onSort={toggleSort}
+              isWatched={market.isWatched}
+              onWatch={market.toggleWatch}
+              empty={emptyState()}
+            />
+          </Show>
+        </div>
+      </Show>
     </div>
   );
-};
-
-export default Dashboard;
+}

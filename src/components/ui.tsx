@@ -1,191 +1,406 @@
-import { Component, ParentComponent, For, Show, createSignal, createEffect, on, onCleanup } from 'solid-js';
-import { fmt } from '../utils';
-import type { ConnectionState } from '../api';
+import {
+  Component,
+  For,
+  JSX,
+  ParentComponent,
+  Show,
+  createEffect,
+  createMemo,
+  createSelector,
+  createSignal,
+  mergeProps,
+  on,
+  onCleanup,
+  splitProps,
+} from 'solid-js';
+import { Icon, type IconName } from './Icon';
+import { pct, price as formatPrice } from '../lib/format';
+import type { ConnectionState } from '../lib/types';
 
-export const Card: ParentComponent<{ class?: string; padding?: 'none' }> = (props) => (
-  <div class={`bg-zinc-900/50 rounded-xl border border-zinc-800/50 ${props.padding === 'none' ? 'p-0' : 'p-4'} ${props.class ?? ''}`}>
-    {props.children}
-  </div>
-);
-
-export const LiveDot: Component<{ show: boolean }> = (props) => (
-  <Show when={props.show}>
-    <span class="relative flex h-1.5 w-1.5">
-      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-      <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-    </span>
-  </Show>
-);
-
-const STATE_CONFIG = {
-  connected: { color: 'bg-emerald-500', ping: true, text: 'Live', textColor: 'text-emerald-400' },
-  connecting: { color: 'bg-amber-500', ping: false, text: 'Connecting...', textColor: 'text-amber-400' },
-  disconnected: { color: 'bg-red-500', ping: false, text: 'Disconnected', textColor: 'text-red-400' },
-} as const;
-
-export const ConnectionIndicator: Component<{ state: ConnectionState; onReconnect?: () => void }> = (props) => (
-  <div class="flex items-center gap-2">
-    <span class="flex items-center gap-1.5">
-      <span class="relative flex h-2 w-2">
-        <Show when={STATE_CONFIG[props.state].ping}>
-          <span class={`animate-ping absolute inline-flex h-full w-full rounded-full ${STATE_CONFIG[props.state].color} opacity-75`} />
-        </Show>
-        <span class={`relative inline-flex rounded-full h-2 w-2 ${STATE_CONFIG[props.state].color} ${props.state === 'connecting' ? 'animate-pulse' : ''}`} />
-      </span>
-      <span class={`text-xs font-medium ${STATE_CONFIG[props.state].textColor}`}>{STATE_CONFIG[props.state].text}</span>
-    </span>
-    <Show when={props.state === 'disconnected' && props.onReconnect}>
-      <button onClick={props.onReconnect} class="text-xs text-zinc-400 hover:text-white transition-colors underline underline-offset-2">
-        Retry
-      </button>
-    </Show>
-  </div>
-);
-
-export const StatCard: Component<{ label: string; value: string | number; live?: boolean; variant?: 'default' | 'success' | 'danger' }> = (props) => {
-  const color = () => props.variant === 'success' ? 'text-emerald-400' : props.variant === 'danger' ? 'text-red-400' : '';
-  return (
-    <Card>
-      <div class="flex items-center gap-1.5 mb-1">
-        <span class="text-[10px] text-zinc-500 uppercase">{props.label}</span>
-        <LiveDot show={props.live ?? false} />
-      </div>
-      <div class={`text-lg font-semibold font-mono ${color()}`}>{props.value}</div>
-    </Card>
-  );
-};
-
-export const CoinAvatar: Component<{ src: string; symbol: string; size?: 'sm' | 'md' | 'lg'; class?: string }> = (props) => {
-  const sizeClass = () => props.size === 'sm' ? 'w-6 h-6' : props.size === 'lg' ? 'w-10 h-10' : 'w-8 h-8';
-  const fallbackSize = () => props.size === 'sm' ? 24 : props.size === 'lg' ? 40 : 32;
-
-  const handleError = (e: Event) => {
-    const img = e.currentTarget as HTMLImageElement;
-    const sym = props.symbol.toLowerCase();
-    if (!img.src.includes('bnbstatic')) {
-      img.src = `https://bin.bnbstatic.com/image/admin_mgs_image_upload/20201110/87496d50-2408-43e1-ad4c-78b47b448a6a/icon/${sym}.png`;
-    } else {
-      img.src = `https://ui-avatars.com/api/?name=${props.symbol.toUpperCase()}&background=27272a&color=a1a1aa&size=${fallbackSize()}&bold=true&length=2`;
-    }
-  };
+export const Panel: ParentComponent<{ class?: string; flush?: boolean }> = (props) => {
+  const [local, rest] = splitProps(props, ['class', 'flush', 'children']);
 
   return (
-    <img
-      src={props.src}
-      alt={props.symbol}
-      class={`${sizeClass()} rounded-full ring-1 ring-white/10 ${props.class ?? ''}`}
-      loading="lazy"
-      onError={handleError}
-    />
-  );
-};
-
-export const Price: Component<{ price: number; change?: number; size?: 'sm' | 'md' | 'lg'; showChange?: boolean; class?: string }> = (props) => {
-  const [flash, setFlash] = createSignal<'up' | 'down' | null>(null);
-  const [prev, setPrev] = createSignal(props.price);
-
-  createEffect(on(() => props.price, (newPrice) => {
-    const p = prev();
-    if (p !== 0 && p !== newPrice) {
-      setFlash(newPrice > p ? 'up' : 'down');
-      const t = setTimeout(() => setFlash(null), 500);
-      onCleanup(() => clearTimeout(t));
-    }
-    setPrev(newPrice);
-  }, { defer: true }));
-
-  const priceSize = () => props.size === 'sm' ? 'text-xs' : props.size === 'lg' ? 'text-3xl' : 'text-sm';
-  const changeSize = () => props.size === 'lg' ? 'text-sm' : 'text-[10px]';
-  const up = () => (props.change ?? 0) >= 0;
-
-  return (
-    <div class={`text-right ${props.class ?? ''}`}>
-      <div class={`font-mono transition-colors duration-300 ${priceSize()} ${flash() === 'up' ? 'text-emerald-400' : flash() === 'down' ? 'text-red-400' : ''}`}>
-        {fmt(props.price)}
-      </div>
-      <Show when={(props.showChange ?? true) && props.change !== undefined}>
-        <span class={`font-mono ${changeSize()} ${up() ? 'text-emerald-400' : 'text-red-400'}`}>
-          {up() ? '+' : ''}{props.change!.toFixed(2)}%
-        </span>
-      </Show>
+    <div {...rest} class={`panel ${local.flush ? '' : 'p-5'} ${local.class ?? ''}`}>
+      {local.children}
     </div>
   );
 };
 
-export const Button: ParentComponent<{ variant?: 'primary' | 'secondary' | 'ghost'; size?: 'sm' | 'md'; disabled?: boolean; loading?: boolean; class?: string; title?: string; onClick?: (e: MouseEvent) => void }> = (props) => {
-  const variantClass = () => props.variant === 'primary' ? 'bg-white text-black hover:bg-white/90' : props.variant === 'secondary' ? 'bg-white/10 text-white hover:bg-white/20' : 'text-zinc-400 hover:text-white hover:bg-white/5';
-  const sizeClass = () => props.size === 'sm' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+type ButtonSize = 'sm' | 'md' | 'icon';
+
+interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}
+
+const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
+  primary: 'bg-fg text-ink hover:bg-fg/90',
+  secondary: 'border border-line bg-panel text-fg hover:border-[#35383d] hover:bg-[#17191c]',
+  ghost: 'text-muted hover:bg-white/[0.05] hover:text-fg',
+};
+
+const BUTTON_SIZES: Record<ButtonSize, string> = {
+  sm: 'h-8 px-3 text-[12px]',
+  md: 'h-9 px-3.5 text-[13px]',
+  icon: 'h-8 w-8',
+};
+
+export const Button: ParentComponent<ButtonProps> = (props) => {
+  const merged = mergeProps({ type: 'button', variant: 'secondary', size: 'md' } as const, props);
+  const [local, rest] = splitProps(merged, ['variant', 'size', 'class', 'children']);
 
   return (
     <button
-      type="button"
-      disabled={props.disabled || props.loading}
-      onClick={props.onClick}
-      title={props.title}
-      class={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all active:scale-[0.98] disabled:opacity-50 ${variantClass()} ${sizeClass()} ${props.class ?? ''}`}
+      {...rest}
+      class={`inline-flex select-none items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40 ${BUTTON_VARIANTS[local.variant]} ${BUTTON_SIZES[local.size]} ${local.class ?? ''}`}
     >
-      <Show when={props.loading}>
-        <svg class="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25" />
-          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-        </svg>
-      </Show>
-      {props.children}
+      {local.children}
     </button>
   );
 };
 
-export const Input: Component<{ value: string; onInput: (v: string) => void; onClear?: () => void; placeholder?: string; class?: string; autofocus?: boolean; ref?: (el: HTMLInputElement) => void }> = (props) => (
-  <div class={`relative group ${props.class ?? ''}`}>
-    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-zinc-300 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-    <input
-      ref={props.ref}
-      type="text"
-      value={props.value}
-      onInput={(e) => props.onInput(e.currentTarget.value)}
-      placeholder={props.placeholder}
-      autofocus={props.autofocus}
-      class="w-full bg-white/5 border border-white/10 rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/20 pl-10 pr-8 py-2 transition-all"
-    />
-    <Show when={props.value && props.onClear}>
-      <button onClick={props.onClear} class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-white transition-colors">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  icon?: IconName;
+}
+
+interface SegmentedProps<T extends string> {
+  value: T;
+  options: readonly SegmentedOption<T>[];
+  onChange: (value: T) => void;
+  class?: string;
+}
+
+export function Segmented<T extends string>(props: SegmentedProps<T>) {
+  const isActive = createSelector(() => props.value);
+
+  return (
+    <div
+      class={`inline-flex items-center rounded-md border border-line bg-panel p-0.5 ${props.class ?? ''}`}
+      role="tablist"
+    >
+      <For each={props.options}>
+        {(option) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isActive(option.value)}
+            onClick={() => props.onChange(option.value)}
+            classList={{
+              'bg-[#212429] text-fg': isActive(option.value),
+              'text-dim hover:text-fg': !isActive(option.value),
+            }}
+            class="inline-flex h-7 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition-colors"
+          >
+            <Show when={option.icon}>{(icon) => <Icon name={icon()} size={12} />}</Show>
+            {option.label}
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
+
+interface ChangeProps {
+  value: number;
+  size?: 'sm' | 'md' | 'lg';
+  class?: string;
+  /** Briefly brighten the value when its rendered percentage actually changes. */
+  flash?: boolean;
+}
+
+const CHANGE_SIZES = {
+  sm: 'text-[11px]',
+  md: 'text-[12px]',
+  lg: 'text-[14px]',
+};
+
+export const Change: Component<ChangeProps> = (props) => {
+  const up = () => props.value >= 0;
+  const text = createMemo(() => pct(props.value));
+  const reduceMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+  const [flash, setFlash] = createSignal(false);
+  let previous = text();
+  let timer: number | undefined;
+
+  createEffect(
+    on(
+      text,
+      (next) => {
+        if (next === previous) return;
+        previous = next;
+        if (!props.flash || reduceMotion) return;
+
+        window.clearTimeout(timer);
+        setFlash(true);
+        timer = window.setTimeout(() => setFlash(false), 340);
+      },
+      { defer: true },
+    ),
+  );
+
+  onCleanup(() => window.clearTimeout(timer));
+
+  return (
+    <span
+      class={`font-mono tabular-nums transition-[filter] duration-200 ${
+        up() ? 'text-up' : 'text-down'
+      } ${CHANGE_SIZES[props.size ?? 'md']} ${props.class ?? ''}`}
+      style={{ filter: flash() ? 'brightness(1.45)' : undefined }}
+      title={Number.isFinite(props.value) ? `${props.value.toFixed(4)}%` : undefined}
+    >
+      {text()}
+    </span>
+  );
+};
+
+interface PriceProps {
+  value: number;
+  class?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  flash?: boolean;
+}
+
+const PRICE_SIZES = {
+  xs: 'text-[11px]',
+  sm: 'text-[12px]',
+  md: 'text-[13px]',
+  lg: 'text-[18px]',
+  xl: 'text-[24px] sm:text-[30px]',
+};
+
+export const Price: Component<PriceProps> = (props) => {
+  const [flash, setFlash] = createSignal<'up' | 'down' | null>(null);
+  let previous = props.value;
+  let timer: number | undefined;
+
+  createEffect(
+    on(
+      () => props.value,
+      (next) => {
+        if (next === previous || props.flash === false) {
+          previous = next;
+          return;
+        }
+
+        window.clearTimeout(timer);
+        setFlash(next > previous ? 'up' : 'down');
+        previous = next;
+        timer = window.setTimeout(() => setFlash(null), 450);
+      },
+      { defer: true },
+    ),
+  );
+
+  onCleanup(() => window.clearTimeout(timer));
+
+  return (
+    <span
+      class={`font-mono tabular-nums transition-colors duration-300 ${
+        flash() === 'up' ? 'text-up' : flash() === 'down' ? 'text-down' : 'text-fg'
+      } ${PRICE_SIZES[props.size ?? 'md']} ${props.class ?? ''}`}
+    >
+      {formatPrice(props.value)}
+    </span>
+  );
+};
+
+const COIN_SIZES = {
+  xs: 'h-5 w-5 text-[8px]',
+  sm: 'h-7 w-7 text-[9px]',
+  md: 'h-9 w-9 text-[10px]',
+  lg: 'h-12 w-12 text-[11px]',
+  xl: 'h-11 w-11 text-[12px]',
+};
+
+const Monogram: Component<{
+  symbol: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  class?: string;
+}> = (props) => {
+  const label = () => props.symbol.replace(/^1000/, '').slice(0, 3).toUpperCase();
+
+  return (
+    <span
+      class={`inline-flex shrink-0 items-center justify-center rounded-md border border-line bg-[#191b1e] font-mono font-medium tracking-tight text-muted ${COIN_SIZES[props.size ?? 'md']} ${props.class ?? ''}`}
+      aria-hidden="true"
+    >
+      {label()}
+    </span>
+  );
+};
+
+const LOGO_BASE = 'https://bin.bnbstatic.com/static/assets/logos';
+
+/**
+ * Official Binance asset logo, with the monogram as a fallback for assets whose
+ * logo is unavailable.
+ */
+export const CoinIcon: Component<{
+  symbol: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  class?: string;
+}> = (props) => {
+  const [failed, setFailed] = createSignal(false);
+
+  createEffect(
+    on(
+      () => props.symbol,
+      () => setFailed(false),
+      { defer: true },
+    ),
+  );
+
+  return (
+    <Show
+      when={!failed()}
+      fallback={<Monogram symbol={props.symbol} size={props.size} class={props.class} />}
+    >
+      <img
+        src={`${LOGO_BASE}/${encodeURIComponent(props.symbol)}.png`}
+        alt=""
+        width={40}
+        height={40}
+        loading="lazy"
+        decoding="async"
+        referrerpolicy="no-referrer"
+        onError={() => setFailed(true)}
+        class={`shrink-0 object-contain ${COIN_SIZES[props.size ?? 'md']} ${props.class ?? ''}`}
+      />
     </Show>
-    <Show when={!props.value}>
-      <kbd class="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] text-zinc-600 bg-white/5 rounded border border-white/10">/</kbd>
+  );
+};
+
+export const RangeMeter: Component<{
+  position: number;
+  low: number;
+  high: number;
+  labels?: boolean;
+  marker?: 'muted' | 'fg';
+  class?: string;
+}> = (props) => (
+  <div class={props.class}>
+    <div
+      class="relative h-1 rounded-full bg-white/[0.07]"
+      title={`${formatPrice(props.low)} – ${formatPrice(props.high)}`}
+    >
+      <span
+        class={`absolute top-1/2 h-2.5 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full ${
+          props.marker === 'fg' ? 'bg-fg' : 'bg-muted'
+        }`}
+        style={{ left: `${props.position}%` }}
+      />
+    </div>
+    <Show when={props.labels}>
+      <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] tabular-nums text-dim">
+        <span>{formatPrice(props.low)}</span>
+        <span>{formatPrice(props.high)}</span>
+      </div>
     </Show>
   </div>
 );
 
-export const StarIcon: Component<{ filled: boolean }> = (props) => (
-  <svg class="w-4 h-4" fill={props.filled ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-  </svg>
+export const WatchButton: Component<{
+  watched: boolean;
+  symbol: string;
+  onToggle: () => void;
+  class?: string;
+}> = (props) => (
+  <button
+    type="button"
+    onClick={props.onToggle}
+    aria-pressed={props.watched}
+    aria-label={`${props.watched ? 'Remove' : 'Add'} ${props.symbol} ${
+      props.watched ? 'from' : 'to'
+    } watchlist`}
+    classList={{
+      'text-fg': props.watched,
+      'text-dim hover:text-fg': !props.watched,
+    }}
+    class={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-white/[0.06] ${props.class ?? ''}`}
+  >
+    <Icon name="star" size={12} fill={props.watched} />
+  </button>
 );
+
+export const RetryState: Component<{ message: string; onRetry: () => void }> = (props) => (
+  <div class="flex flex-col items-center gap-2 py-10">
+    <Icon name="alert" size={16} class="text-down" />
+    <p class="text-[12px] text-muted">{props.message}</p>
+    <Button variant="ghost" size="sm" onClick={props.onRetry}>
+      Retry
+    </Button>
+  </div>
+);
+
+const STATE_META = {
+  live: { label: 'Live', dot: 'bg-up', text: 'text-up' },
+  connecting: { label: 'Connecting', dot: 'bg-warn', text: 'text-warn' },
+  offline: { label: 'Offline', dot: 'bg-down', text: 'text-down' },
+} as const;
+
+export const StatusPill: Component<{
+  state: ConnectionState;
+  compact?: boolean;
+  onRetry?: () => void;
+}> = (props) => {
+  const meta = () => STATE_META[props.state];
+
+  return (
+    <span
+      class="inline-flex items-center gap-1.5"
+      role="status"
+      aria-label={props.compact ? meta().label : undefined}
+    >
+      <span class={`h-1.5 w-1.5 rounded-full ${meta().dot}`} />
+      <Show when={!props.compact}>
+        <span class={`text-[11px] font-medium ${meta().text}`}>{meta().label}</span>
+      </Show>
+      <Show when={props.state === 'offline' && props.onRetry}>
+        <button
+          type="button"
+          onClick={props.onRetry}
+          class="text-[11px] text-muted underline underline-offset-2 transition-colors hover:text-fg"
+        >
+          Retry
+        </button>
+      </Show>
+    </span>
+  );
+};
 
 export const Skeleton: Component<{ class?: string }> = (props) => (
-  <div class={`animate-pulse bg-zinc-800/50 rounded ${props.class ?? ''}`} />
+  <div class={`animate-pulse rounded bg-white/[0.045] ${props.class ?? ''}`} />
 );
 
-export const ListSkeleton: Component<{ rows?: number }> = (props) => (
-  <div class="divide-y divide-zinc-800/30">
-    <For each={Array(props.rows ?? 8).fill(0)}>
-      {() => (
-        <div class="grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_1fr_6rem_auto_2rem] items-center gap-2 sm:gap-3 px-3 py-3">
-          <Skeleton class="w-5 h-4" />
-          <div class="flex items-center gap-3">
-            <Skeleton class="w-8 h-8 rounded-full" />
-            <div class="space-y-1.5"><Skeleton class="w-24 h-4" /><Skeleton class="w-12 h-3" /></div>
-          </div>
-          <Skeleton class="w-16 h-8 hidden sm:block" />
-          <div class="text-right space-y-1.5"><Skeleton class="w-20 h-4 ml-auto" /><Skeleton class="w-14 h-3 ml-auto" /></div>
-        </div>
-      )}
-    </For>
+export const Empty: Component<{
+  title: string;
+  body?: string;
+  icon?: IconName;
+  iconClass?: string;
+  action?: JSX.Element;
+}> = (props) => (
+  <div class="flex flex-col items-center justify-center px-6 py-16 text-center">
+    <Icon name={props.icon ?? 'search'} size={18} class={props.iconClass ?? 'text-dim'} />
+    <h3 class="mt-3 text-[14px] font-medium text-fg">{props.title}</h3>
+    <Show when={props.body}>
+      <p class="mt-1 max-w-sm text-[13px] leading-relaxed text-muted">{props.body}</p>
+    </Show>
+    <Show when={props.action}>
+      <div class="mt-4">{props.action}</div>
+    </Show>
   </div>
+);
+
+export const Kbd: ParentComponent<{ class?: string }> = (props) => (
+  <kbd
+    class={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line px-1 font-mono text-[10px] leading-none text-dim ${props.class ?? ''}`}
+  >
+    {props.children}
+  </kbd>
 );
